@@ -1,17 +1,25 @@
-#! /usr/bin/env python
-"""3D Pong action game"""
-import olpcgames, pygame, logging, random, math
-from pygame.locals import *
+#!/usr/bin/env python
+"""3dpong - 3D action game by Wade Brainerd."""
 
-log = logging.getLogger( '3dpong run' )
-log.setLevel( logging.DEBUG )
+import logging, os, time, math, threading, random
+from gettext import gettext as _
+
+import gobject, pygtk, gtk, pango
+gobject.threads_init()  
+
+from sugar.activity import activity
+from sugar.graphics import *
+
+log = logging.getLogger('3dpong')
+log.setLevel(logging.DEBUG)
+logging.basicConfig()
 
 StageDescs = [
-    { 'Name': '+0', 'AISpeed': 2, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSpeed': 3, 'PlayerWidth': 40, 'PlayerHeight': 30, 'AIWidth': 40, 'AIHeight': 30 },
-    { 'Name': '+1', 'AISpeed': 4, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 1, 'StageCrossGravity': 0, 'BallSpeed': 3, 'PlayerWidth': 50, 'PlayerHeight': 40, 'AIWidth': 50, 'AIHeight': 40 },
-    { 'Name': '+2', 'AISpeed': 8, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 1, 'StageCrossGravity': 0, 'BallSpeed': 4, 'PlayerWidth': 160, 'PlayerHeight': 15, 'AIWidth': 160, 'AIHeight': 15 },
-    { 'Name': '+3', 'AISpeed': 10, 'AIRecenter': 0, 'StageDepth': 500, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSpeed': 10, 'PlayerWidth': 40, 'PlayerHeight': 50, 'AIWidth': 40, 'AIHeight': 40 },
-    { 'Name': '+4', 'AISpeed': 10, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 1, 'BallSpeed': 5, 'PlayerWidth': 40, 'PlayerHeight': 30, 'AIWidth': 40, 'AIHeight': 30 },
+    { 'Name': _('normal'), 'AISpeed': 2, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSpeed': 3, 'PlayerWidth': 40, 'PlayerHeight': 30, 'AIWidth': 40, 'AIHeight': 30 },
+    { 'Name': _('bounce'), 'AISpeed': 4, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 1, 'StageCrossGravity': 0, 'BallSpeed': 3, 'PlayerWidth': 50, 'PlayerHeight': 40, 'AIWidth': 50, 'AIHeight': 40 },
+    { 'Name': _('wide'),   'AISpeed': 8, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 1, 'StageCrossGravity': 0, 'BallSpeed': 4, 'PlayerWidth': 160, 'PlayerHeight': 20, 'AIWidth': 160, 'AIHeight': 20 },
+    { 'Name': _('deep'),   'AISpeed': 10, 'AIRecenter': 0, 'StageDepth': 500, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSpeed': 10, 'PlayerWidth': 40, 'PlayerHeight': 50, 'AIWidth': 40, 'AIHeight': 40 },
+    { 'Name': _('rotate'), 'AISpeed': 10, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 1, 'BallSpeed': 5, 'PlayerWidth': 40, 'PlayerHeight': 30, 'AIWidth': 40, 'AIHeight': 30 },
 ]
 
 class VectorType:
@@ -92,9 +100,9 @@ class GameType:
         self.CurLevel = 0
 
         # Variables affecting the sequencer.
-        #self.Sequence = 3  # Use to start at gameplay
         self.Sequence = 0
-        self.Brightness = 100 # 0
+        #self.Sequence = 3  # Use to start at gameplay
+        self.Brightness = 100
         self.Timer0 = 0;
         self.Timer1 = 0;
         
@@ -137,11 +145,11 @@ def GetProjectedY(X, Y, Z):
     return (DisplayCenterY + ( Y - DisplayCenterY ) * ViewportScale / ( Z + ViewportScale )) * ActualScreenHeight/ScreenHeight / 256
 
 def DrawLine3D(X1, Y1, Z1, X2, Y2, Z2, draw, color=None):
-    if (color == None): color = (255,255,255)
-    pygame.draw.line(Game.screen, 
-        (color[0]*Game.Brightness/100, color[1]*Game.Brightness/100, color[2]*Game.Brightness/100), 
-        (GetProjectedX( X1, Y1, Z1 ), GetProjectedY( X1, Y1, Z1 )), 
-        (GetProjectedX( X2, Y2, Z2 ), GetProjectedY( X2, Y2, Z2 )))
+    if color == None: color = (255,255,255)
+    Game.cairo.set_source_rgb(color[0]/255.0*Game.Brightness/100.0, color[1]/255.0*Game.Brightness/100.0, color[2]/255.0*Game.Brightness/100.0)
+    Game.cairo.move_to(GetProjectedX( X1, Y1, Z1 ), GetProjectedY( X1, Y1, Z1 ))
+    Game.cairo.line_to(GetProjectedX( X2, Y2, Z2 ), GetProjectedY( X2, Y2, Z2 ))
+    Game.cairo.stroke()
 
 def DrawRect3D(Rect, Depth, draw):
     Temp = RectType()
@@ -151,40 +159,50 @@ def DrawRect3D(Rect, Depth, draw):
     Temp.Right = GetProjectedX( Rect.Right, Rect.Bottom, Depth ) - 1
     Temp.Bottom = GetProjectedY( Rect.Right, Rect.Bottom, Depth ) - 1
 
-    if ( draw ):
-        pygame.draw.rect(Game.screen, (255*Game.Brightness/100, 255*Game.Brightness/100, 255*Game.Brightness/100), pygame.Rect(Temp.Left, Temp.Top, Temp.Right-Temp.Left, Temp.Bottom-Temp.Top), 1)
-    else:
-        pygame.draw.rect(Game.screen, (255*Game.Brightness/100, 255*Game.Brightness/100, 255*Game.Brightness/100), pygame.Rect(Temp.Left, Temp.Top, Temp.Right-Temp.Left, Temp.Bottom-Temp.Top), 1)
+    Game.cairo.set_source_rgb(Game.Brightness/100.0, Game.Brightness/100.0, Game.Brightness/100.0)
+    Game.cairo.move_to(Temp.Left, Temp.Top)
+    Game.cairo.line_to(Temp.Right, Temp.Top)
+    Game.cairo.line_to(Temp.Right, Temp.Bottom)
+    Game.cairo.line_to(Temp.Left, Temp.Bottom)
+    Game.cairo.line_to(Temp.Left, Temp.Top)
+    Game.cairo.stroke()
 
 def DrawCircle3D(X, Y, Z, radius, draw, color=None):
-    if (color == None): color = (255,255,255)
+    if color == None: color = (255,255,255)
     r = GetProjectedX(X+radius, Y, Z)-GetProjectedX(X, Y, Z)
     if r < 1:
         return
-    pygame.draw.circle(Game.screen, 
-        (color[0]*Game.Brightness/100, color[1]*Game.Brightness/100, color[2]*Game.Brightness/100), 
-        (GetProjectedX( X, Y, Z ), GetProjectedY( X, Y, Z )), r, 1)
+    Game.cairo.set_source_rgb(color[0]/255.0*Game.Brightness/100.0, color[1]/255.0*Game.Brightness/100.0, color[2]/255.0*Game.Brightness/100.0)
+    x = GetProjectedX( X, Y, Z )
+    y = GetProjectedY( X, Y, Z )
+    Game.cairo.move_to(x, y-r)
+    Game.cairo.arc(x, y, r, 0, 2*math.pi)
+    Game.cairo.stroke()
+
+def DrawFilledCircle3D(X, Y, Z, radius, draw, color=None):
+    if color == None: color = (255,255,255)
+    r = GetProjectedX(X+radius, Y, Z)-GetProjectedX(X, Y, Z)
+    if r < 1:
+        return
+    Game.cairo.set_source_rgb(color[0]/255.0*Game.Brightness/100.0, color[1]/255.0*Game.Brightness/100.0, color[2]/255.0*Game.Brightness/100.0)
+    Game.cairo.arc(GetProjectedX( X, Y, Z ), GetProjectedY( X, Y, Z ), r, 0, 2*math.pi)
+    Game.cairo.fill()
 
 def DrawEllipse3D(X, Y, Z, radiusX, radiusY, draw, color=None):
     if (color == None): color = (255,255,255)
     w = radiusX*256/2/max(1,Z)
     h = radiusY*256/2/max(1,Z)
-    pygame.draw.ellipse(Game.screen, 
-        (color[0]*Game.Brightness/100, color[1]*Game.Brightness/100, color[2]*Game.Brightness/100), 
-        pygame.Rect(GetProjectedX( X, Y, Z )-w, GetProjectedY( X, Y, Z )-h, max(2,w*2), max(2,h*2)), 1) 
+    #pygame.draw.ellipse(Game.screen, 
+    #    (color[0]*Game.Brightness/100, color[1]*Game.Brightness/100, color[2]*Game.Brightness/100), 
+    #    pygame.Rect(GetProjectedX( X, Y, Z )-w, GetProjectedY( X, Y, Z )-h, max(2,w*2), max(2,h*2)), 1) 
 
-def DrawFilledRect3D(Rect, Depth, draw):
-    Temp = RectType()
-    
-    Temp.Left = GetProjectedX( Rect.Top, Rect.Left, Depth ) + 1
-    Temp.Top = GetProjectedY( Rect.Top, Rect.Left, Depth ) + 1
-    Temp.Right = GetProjectedX( Rect.Right, Rect.Bottom, Depth ) - 1
-    Temp.Bottom = GetProjectedY( Rect.Right, Rect.Bottom, Depth ) - 1
-
-    if ( draw ):
-        pygame.draw.rect(Game.screen, (255*Game.Brightness/100, 255*Game.Brightness/100, 255*Game.Brightness/100), pygame.Rect(Temp.Left, Temp.Top, Temp.Right-Temp.Left, Temp.Bottom-Temp.Top))
-    else:
-        pygame.draw.rect(Game.screen, (0, 0, 0), pygame.Rect(Temp.Left, Temp.Top, Temp.Right-Temp.Left, Temp.Bottom-Temp.Top))
+def DrawText (text, x, y, size):
+    Game.cairo.set_font_size(size)
+    x_bearing, y_bearing, width, height = Game.cairo.text_extents(text)[:4]
+    if x == -1: x = ActualScreenWidth/2
+    if y == -1: y = ActualScreenHeight/2
+    Game.cairo.move_to(x - width/2 - x_bearing, y - height/2 - y_bearing)
+    Game.cairo.show_text(text)
 
 def DrawStage( Stage, draw ):
     Window = Stage.Window
@@ -224,7 +242,7 @@ def DrawStage( Stage, draw ):
 
 def DrawBall( Ball, Stage, draw ):
     # Draw the ball.
-    DrawCircle3D(Ball.Pos.X, Ball.Pos.Y, Ball.Pos.Z, Game.Stage.BallSize, draw)
+    DrawFilledCircle3D(Ball.Pos.X, Ball.Pos.Y, Ball.Pos.Z, Game.Stage.BallSize, draw)
 
     # Draw the shadow.
     DrawEllipse3D(Ball.Pos.X, Stage.Window.Bottom, Ball.Pos.Z, Game.Stage.BallSize*2, Game.Stage.BallSize, draw, (64, 64, 64))
@@ -521,12 +539,12 @@ def UpdateBall ( Ball, Paddle1, Paddle2, Stage ):
         Paddle1.Score += 1
     elif CollisionType == 2:
         Paddle2.Score += 1  
-    elif CollisionType == 3:
-        Game.Player1PaddleWav.play()    
-    elif CollisionType == 4:
-        Game.Player2PaddleWav.play()    
-    elif CollisionType == 5:
-        Game.WallWav.play() 
+    #elif CollisionType == 3:
+    #    Game.Player1PaddleWav.play()    
+    #elif CollisionType == 4:
+    #    Game.Player2PaddleWav.play()    
+    #elif CollisionType == 5:
+    #    Game.WallWav.play() 
         
     return CollisionType
 
@@ -601,20 +619,27 @@ def NewGame():
     NextLevel()
 
 def DrawScoreBar(Pos, Score, Color, Player):
+    Game.cairo.set_source_rgb(Color[0]/255.0, Color[1]/255.0, Color[2]/255.0)
     if Player == 0:
         for j in range(0, 5):
-            Points = []
+            x = Pos[0] + j*30
+            y = Pos[1]
+            Game.cairo.move_to(Game.XPoints[0][0]*20-10+x, Game.XPoints[0][1]*20-10+y)
             for p in Game.XPoints:
-                Points.append((p[0]*20-10+Pos[0]+j*30, p[1]*20-10+Pos[1]))
-            pygame.draw.polygon(Game.screen, Color, Points, j >= Score)
+                Game.cairo.line_to(p[0]*20-10+x, p[1]*20-10+y)
+            Game.cairo.line_to(Game.XPoints[0][0]*20-10+x, Game.XPoints[0][1]*20-10+y)
+            if j >= Score:
+                Game.cairo.stroke()
+            else:
+                Game.cairo.fill()
     else:
         for j in range(0, 5):
-            pygame.draw.circle(Game.screen, Color, (Pos[0] + j*30, Pos[1]), 10, j >= Score)
-
-def DrawTextCentered(Pos, Text, Color):
-    TextSurface = Game.font.render(Text, 1, Color)
-    TextPos = TextSurface.get_rect(centerx=Pos[0], centery=Pos[1])
-    Game.screen.blit(TextSurface, TextPos)
+            Game.cairo.move_to(Pos[0] + j*30 + 10, Pos[1])
+            Game.cairo.arc(Pos[0] + j*30, Pos[1], 10, 0, 2*math.pi)
+            if j >= Score:
+                Game.cairo.stroke()
+            else:
+                Game.cairo.fill()
 
 def DrawGame():
     DrawStage( Game.Stage, 1 )
@@ -622,23 +647,26 @@ def DrawGame():
     DrawPaddle( Game.Paddle2, Game.Stage, 1 )
     DrawBall( Game.Ball, Game.Stage, 1 )
 
-    v = 255*Game.Brightness/100
+    v = 255*Game.Brightness/100.0
     color = (v, v, v)
 
-    DrawScoreBar((200, 20), Game.Paddle1.Score, color, 0)
-    DrawScoreBar((850, 20), Game.Paddle2.Score, color, 1)
+    DrawScoreBar((ActualScreenWidth*1/4-75, 30), Game.Paddle1.Score, color, 0)
+    DrawScoreBar((ActualScreenWidth*3/4-75, 30), Game.Paddle2.Score, color, 1)
 
-    DrawTextCentered((Game.screen.get_width()/2, 20), "Stage %d" % (Game.CurLevel+1), color)
+    #Game.cairo.set_source_rgb(color[0]/255.0, color[1]/255.0, color[2]/255.0)
+    #DrawText(StageDescs[Game.CurLevel]['Name'], -1, 30, 24)
 
 def DrawScoreEffect():
     RingSpacing = 8*256
     RingSpeed = 3*256
     NumRings = 10
     NumSteps = 20
-    clock = pygame.time.Clock()
-    Game.ScoreWav.play()
+    #clock = time.clock()
+    #Game.ScoreWav.play()
     for step in range(1, NumSteps):
-        pygame.draw.rect(Game.screen, (0, 0, 0), pygame.Rect(0, 0, Game.screen.get_width(), Game.screen.get_height()))
+        Game.cairo.set_source_rgba(0, 0, 0)
+        Game.cairo.rectangle(0, 0, ActualScreenWidth, ActualScreenHeight)
+        Game.cairo.fill()
         b = 255*(1.0-float(step)/NumSteps)
         DrawCircle3D(Game.Ball.LastPos.X+Game.Ball.LastVel.X*step/2, Game.Ball.LastPos.Y+Game.Ball.LastVel.Y*step/2, Game.Ball.LastPos.Z+Game.Ball.LastVel.Z*step/2, Game.Stage.BallSize, True, (b,b,b))
         random.seed(12345678)
@@ -646,12 +674,11 @@ def DrawScoreEffect():
             b = 255*(1.0-float(step)/NumSteps)*(0.5+0.5*math.cos(math.pi*float(ring)/NumRings))
             DrawCircle3D(Game.Ball.LastPos.X+Game.Ball.LastVel.X*ring, Game.Ball.LastPos.Y+Game.Ball.LastVel.Y*ring, Game.Ball.LastPos.Z+Game.Ball.LastVel.Z*ring, (-ring+1)*RingSpacing + RingSpeed*step, True, (b, b, b))
         DrawGame()
-        pygame.display.flip()
-        clock.tick(20)
+        time.sleep(0.01)
+        #pygame.display.flip()
+        #clock.tick(20)
 
 def SequenceIntro():
-    text = Game.font.render("3 d   p o n g", 1, (255*Game.Timer0/100, 255*Game.Timer0/100, 255*Game.Timer0/100))
-    Game.screen.blit(text, text.get_rect(centerx=Game.screen.get_width()/2, centery=Game.screen.get_height()/2))
     if (Game.Timer1 == 0):
         Game.Brightness = 0
         Game.Timer0 += 1
@@ -661,15 +688,16 @@ def SequenceIntro():
         if (Game.Brightness < 100): Game.Brightness += 1
         Game.Timer0 -= 2
         if (Game.Timer0 <= 0):
-            Game.IntroWav.play()
+            #Game.IntroWav.play()
             Game.Sequence = 2
             Game.Timer0 = 0
             Game.Timer1 = 0
         DrawGame()
+    Game.cairo.set_source_rgb(Game.Timer0/100.0, Game.Timer0/100.0, Game.Timer0/100.0)
+    DrawText("3 d   p o n g", -1, -1, 100)
 
 def SequenceNewStage():
-    text = Game.font.render(StageDescs[Game.CurLevel]['Name'], 1, (255*Game.Timer0/100, 255*Game.Timer0/100, 255*Game.Timer0/100))
-    Game.screen.blit(text, text.get_rect(centerx=Game.screen.get_width()/2, centery=Game.screen.get_height()/2))
+    DrawGame()
     if (Game.Timer1 == 0):
         if (Game.Brightness > 0): Game.Brightness -= 5
         Game.Timer0 += 2
@@ -680,17 +708,17 @@ def SequenceNewStage():
         if (Game.Brightness < 100): Game.Brightness += 1
         Game.Timer0 -= 2
         if (Game.Timer0 <= 0):
-            Game.IntroWav.play()
+            #Game.IntroWav.play()
             Game.Sequence = 2
             Game.Timer0 = 0
             Game.Timer1 = 0
-    DrawGame()
+    Game.cairo.set_source_rgb(Game.Timer0/100.0, Game.Timer0/100.0, Game.Timer0/100.0)
+    DrawText(StageDescs[Game.CurLevel]['Name'], -1, -1, 100)
 
 def SequenceBallRelease():
     if (Game.Brightness < 100): Game.Brightness += 1
-    v = math.sin(3.14159*Game.Timer0/30)
-    text = Game.font.render(str(3-Game.Timer1), 1, (255*v, 255*v, 255*v))
-    Game.screen.blit(text, text.get_rect(centerx=Game.screen.get_width()/2, centery=Game.screen.get_height()/2))
+    DrawGame()
+    v = math.sin(3.14159*Game.Timer0/30.0)
     Game.Timer0 += 1
     if (Game.Timer0 > 25):
         Game.Timer1 += 1
@@ -698,7 +726,8 @@ def SequenceBallRelease():
     if (Game.Timer1 >= 3):
         Game.Sequence = 3
         Game.EndTimeout = 0
-    DrawGame()
+    Game.cairo.set_source_rgb(v, v, v)
+    DrawText(str(3-Game.Timer1), -1, -1, 20)
 
 def SequencePlay():
     DrawGame()
@@ -736,8 +765,9 @@ def SequencePlay():
                 Game.Sequence = 1
 
 def SequenceGameOver():
-    text = Game.font.render("; - {", 1, (255*Game.Timer0/100, 255*Game.Timer0/100, 255*Game.Timer0/100))
-    Game.screen.blit(text, text.get_rect(centerx=Game.screen.get_width()/2, centery=Game.screen.get_height()/2))
+    DrawGame()
+    Game.cairo.set_source_rgb(Game.Timer0/100, Game.Timer0/100, Game.Timer0/100)
+    DrawText("; - {", -1, -1, 24)
     if (Game.Timer1 == 0):
         if (Game.Brightness > 0): Game.Brightness -= 5
         Game.Timer0 += 2
@@ -750,58 +780,57 @@ def SequenceGameOver():
             Game.Sequence = 0
             Game.Timer0 = 0
             Game.Timer1 = 0
-    DrawGame()
 
 def SequenceYouWin():
     StartY = 250
     TotalScore = 0
     for i in range(0, len(StageDescs)):
-        v = clamp(255*Game.Timer0/60 - i*60, 0, 255)
+        v = clamp(255*Game.Timer0/60.0 - i*60, 0, 255)
         color = (v, v, v)
-        minus = Game.font.render("-", 1, color)
-        equals = Game.font.render("=", 1, color)
-    
-        text = Game.font.render(StageDescs[i]['Name'], 1, color)
-        Game.screen.blit(text, text.get_rect(centerx=125, centery=StartY + i*50))
 
         PlayerScore = StageDescs[i]['PlayerScore']
         AIScore = StageDescs[i]['AIScore']
         DiffScore = PlayerScore - AIScore
 
         DrawScoreBar((250, StartY + i*50), PlayerScore, color, 0)
-        Game.screen.blit(minus, (text.get_rect(centerx=475, centery=StartY + i*50)))
+        DrawText('-', 475, StartY + i*50, 20)
         DrawScoreBar((550, StartY + i*50), AIScore, color, 1)
-        Game.screen.blit(equals, (text.get_rect(centerx=775, centery=StartY + i*50)))
+        DrawText('=', 775, StartY + i*50, 20)
         DrawScoreBar((850, StartY + i*50), DiffScore, color, 0)
+
+        DrawText(StageDescs[i]['Name'], 125, StartY + i*50, 24)
 
         TotalScore += DiffScore
 
-    pygame.draw.line(Game.screen, color, (250, StartY + len(StageDescs)*50), (950, StartY + len(StageDescs)*50), 1)
-    #Game.screen.blit(equals, (text.get_rect(centerx=800, centery=StartY + i*50)))
+    Game.cairo.move_to(250, StartY + len(StageDescs)*50)
+    Game.cairo.line_to(950, StartY + len(StageDescs)*50)
+    Game.cairo.stroke()
     x = 250
     y = StartY + (len(StageDescs)+1)*50
     for j in range(0, 5*len(StageDescs)):
-        Points = []
+        Game.cairo.move_to(Game.XPoints[0][0]*20-10+x, Game.XPoints[0][1]*20-10+y)
         for p in Game.XPoints:
-            Points.append((p[0]*20-10+x, p[1]*20-10+y))
-        pygame.draw.polygon(Game.screen, color, Points, j >= TotalScore)
-        #pygame.draw.circle(Game.screen, color, (x, y), 10, j >= TotalScore)
+            Game.cairo.line_to(p[0]*20-10+x, p[1]*20-10+y)
+        Game.cairo.line_to(Game.XPoints[0][0]*20-10+x, Game.XPoints[0][1]*20-10+y)
+        if j >= TotalScore:
+            Game.cairo.stroke()
+        else:
+            Game.cairo.fill()
         x += 30
         if (x > 980):
             x = 250
             y += 50
 
+    text = "; - |"
     if (TotalScore >= 5*len(StageDescs)):
-        text = Game.font.render("; - D", 1, color)
+        text = "; - D"
     elif (TotalScore >= 4*len(StageDescs)):
-        text = Game.font.render("; - >", 1, color)
+        text = "; - >"
     elif (TotalScore >= 3*len(StageDescs)):
-        text = Game.font.render("; - )", 1, color)
+        text = "; - )"
     elif (TotalScore >= 2*len(StageDescs)):
-        text = Game.font.render("; - }", 1, color)
-    else: #(TotalScore >= 1*len(StageDescs)):
-        text = Game.font.render("; - |", 1, color)
-    Game.screen.blit(text, text.get_rect(centerx=Game.screen.get_width()/2, centery=150))
+        text = "; - }"
+    DrawText(text, -1, 150, 24)
 
     if (Game.Timer1 == 0):
         if (Game.Brightness > 0): Game.Brightness -= 5
@@ -822,55 +851,73 @@ def SequenceYouWin():
             Game.Timer0 = 0
             Game.Timer1 = 0
 
-def main():
-    size = (1200,825)
-    if olpcgames.ACTIVITY:
-        size = olpcgames.ACTIVITY.game_size
+class Pong3D(activity.Activity):
 
-    pygame.init()
+    def __init__ (self, handle):
+        activity.Activity.__init__(self, handle)
+        self.set_title(_("3dpong"))
 
-    # Graphics init
-    Game.screen = pygame.display.set_mode(size)
-    Game.font = pygame.font.Font(None, 36)
-    pygame.display.set_caption('GameJam test')
-    pygame.mouse.set_visible(0)
+        # Get activity size. 
+        # todo- What we really need is the size of the canvasarea, not including the toolbox.
+        self.width = gtk.gdk.screen_width()
+        self.height = gtk.gdk.screen_height()
 
-    # Sound assets
-    Game.IntroWav = pygame.mixer.Sound('sound/intro.wav')
-    Game.ScoreWav = pygame.mixer.Sound('sound/score.wav')
-    Game.Player1PaddleWav = pygame.mixer.Sound('sound/player1paddle.wav')
-    Game.Player2PaddleWav = pygame.mixer.Sound('sound/player2paddle.wav')
-    Game.WallWav = pygame.mixer.Sound('sound/wall.wav')
+        global ActualScreenWidth
+        global ActualScreenHeight
+        ActualScreenWidth = self.width
+        ActualScreenHeight = self.height
 
-    clock = pygame.time.Clock()
+        # Set up the drawing window.
+        self.drawarea = gtk.DrawingArea()
+        self.drawarea.set_size_request(self.width, self.height)
+        self.drawarea.connect('expose-event', self.on_expose)
+        self.drawarea.connect('destroy', self.on_destroy)
+        self.drawarea.add_events(gtk.gdk.POINTER_MOTION_MASK|gtk.gdk.BUTTON_PRESS_MASK|gtk.gdk.BUTTON_RELEASE_MASK)
+        self.drawarea.connect('motion-notify-event', self.on_mouse)
+        self.drawarea.connect('button-press-event', self.on_mouse)
+        self.drawarea.connect('button-release-event', self.on_mouse)
+        self.drawarea.grab_add()
+        self.drawarea.cursor_initialized = False
 
-    NewGame()
-    
-    running = True
-    while running:
-        # Aim for 20fps.
-        clock.tick(20)
+        self.set_double_buffered(False)
+        self.drawarea.set_double_buffered(False)
 
-        # Process events.
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == KEYDOWN and event.key == K_ESCAPE:
-                return
-            # Cheat code for testing.
-            #elif event.type    == KEYDOWN and event.key == K_UP:
-            #   if (Game.Paddle1.Score < 5):
-            #       Game.Paddle1.Score += 1
-            elif event.type == MOUSEBUTTONDOWN:
-                Game.MouseDown = 1
-            elif event.type == MOUSEBUTTONUP:
-                Game.MouseDown = 0
-            elif event.type == MOUSEMOTION:
-                Game.MouseX = event.pos[0]
-                Game.MouseY = event.pos[1]
+        # Set up the drawing.
+        self.set_canvas(self.drawarea)
+        self.show_all()
+
+        # Initialize the game.
+        NewGame()
+
+        # Start the game loop.
+        gobject.timeout_add(33, self.tick)
+
+    def on_mouse (self, widget, event):
+        Game.MouseX = int(event.x)
+        Game.MouseY = int(event.y)
+        if event.type == gtk.gdk.BUTTON_PRESS:
+            #if (Game.Paddle1.Score < 5):
+            #    Game.Paddle1.Score += 1
+            Game.MouseDown = 1
+        if event.type == gtk.gdk.BUTTON_RELEASE:
+            Game.MouseDown = 0
+
+    def on_expose (self, widget, event):
+        # Clear mouse cursor
+        if not widget.cursor_initialized:
+            widget.cursor_initialized = True
+            pixmap = gtk.gdk.Pixmap(None, 1, 1, 1)
+            color = gtk.gdk.Color()
+            cursor = gtk.gdk.Cursor(pixmap, pixmap, color, color, 0, 0)
+            widget.window.set_cursor(cursor)
+        
+        Game.drawarea = widget
+        Game.cairo = widget.window.cairo_create()
 
         # Clear the screen.
-        pygame.draw.rect(Game.screen, (0, 0, 0), pygame.Rect(0, 0, Game.screen.get_width(), Game.screen.get_height()))
+        Game.cairo.set_source_rgba(0, 0, 0)
+        Game.cairo.rectangle(0, 0, self.width, self.height)
+        Game.cairo.fill()
 
         # Handle current game sequence.
         if (Game.Sequence == 0): # Intro
@@ -886,9 +933,10 @@ def main():
         elif (Game.Sequence == 5): # You Win
             SequenceYouWin()
 
-        pygame.display.flip()
-        
-if __name__ == "__main__":
-    logging.basicConfig()
-    main()
+    def on_destroy (self, widget):
+        self.running = False
+
+    def tick (self):
+        self.drawarea.queue_draw()
+        return True
 
