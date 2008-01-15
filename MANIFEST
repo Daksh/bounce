@@ -1,6 +1,6 @@
-run.py
+pong.py
 setup.py
-activity.py
+MANIFEST
 NEWS
 activity/3dpong.svg
 activity/activity.info

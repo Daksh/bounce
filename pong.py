@@ -880,7 +880,7 @@ class Pong3D(activity.Activity):
         self.drawarea.cursor_initialized = False
 
         self.set_double_buffered(False)
-        self.drawarea.set_double_buffered(False)
+        #self.drawarea.set_double_buffered(False)
 
         # Set up the drawing.
         self.set_canvas(self.drawarea)
@@ -890,7 +890,7 @@ class Pong3D(activity.Activity):
         NewGame()
 
         # Start the game loop.
-        gobject.timeout_add(33, self.tick)
+        gobject.timeout_add(20, self.tick)
 
     def on_mouse (self, widget, event):
         Game.MouseX = int(event.x)
@@ -901,6 +901,7 @@ class Pong3D(activity.Activity):
             Game.MouseDown = 1
         if event.type == gtk.gdk.BUTTON_RELEASE:
             Game.MouseDown = 0
+        #self.tick()
 
     def on_expose (self, widget, event):
         # Clear mouse cursor

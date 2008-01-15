@@ -1,8 +1,8 @@
 [Activity]
 name = 3dpong 
-activity_version = 1
+activity_version = 2
 host_version = 1
 service_name = 3dpong
 icon = 3dpong
-exec = sugar-activity activity.Activity
+exec = sugar-activity pong.Pong3D
 

@@ -1,0 +1,9 @@
+3dpong-2
+
+* Rewrote without PyGame, using plain PyGtk and Cairo.
+* Minor display improvements.
+* Sound currently broken.
+
+3dpong-1
+
+* Initial release.
