@@ -4,7 +4,7 @@
 import logging, os, time, math, threading, random
 from gettext import gettext as _
 
-import gobject, pygtk, gtk, pango
+import gobject, pygtk, gtk, pango, cairo
 gobject.threads_init()  
 
 from sugar.activity import activity
@@ -13,6 +13,7 @@ from sugar.graphics import *
 log = logging.getLogger('3dpong')
 log.setLevel(logging.DEBUG)
 logging.basicConfig()
+gtk.add_log_handlers()
 
 StageDescs = [
     { 'Name': _('normal'), 'AISpeed': 2, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSpeed': 3, 'PlayerWidth': 40, 'PlayerHeight': 30, 'AIWidth': 40, 'AIHeight': 30 },
@@ -870,7 +871,6 @@ class Pong3D(activity.Activity):
         # Set up the drawing window.
         self.drawarea = gtk.DrawingArea()
         self.drawarea.set_size_request(self.width, self.height)
-        self.drawarea.connect('expose-event', self.on_expose)
         self.drawarea.connect('destroy', self.on_destroy)
         self.drawarea.add_events(gtk.gdk.POINTER_MOTION_MASK|gtk.gdk.BUTTON_PRESS_MASK|gtk.gdk.BUTTON_RELEASE_MASK)
         self.drawarea.connect('motion-notify-event', self.on_mouse)
@@ -880,7 +880,7 @@ class Pong3D(activity.Activity):
         self.drawarea.cursor_initialized = False
 
         self.set_double_buffered(False)
-        #self.drawarea.set_double_buffered(False)
+        self.drawarea.set_double_buffered(True)
 
         # Set up the drawing.
         self.set_canvas(self.drawarea)
@@ -889,8 +889,18 @@ class Pong3D(activity.Activity):
         # Initialize the game.
         NewGame()
 
-        # Start the game loop.
-        gobject.timeout_add(20, self.tick)
+        # Get the mainloop ready to run.
+        gobject.timeout_add(50, self.mainloop)
+
+    def mainloop (self):
+        # Start the game loop.  Note that __init__ doesn't actually return until the activity ends.  
+        # A bit extreme, but it's the only way to take over the GTK event loop from an Activity.
+        self.running = True
+        while self.running:
+            self.tick()
+            while gtk.events_pending():
+                gtk.main_iteration(False)
+        return False
 
     def on_mouse (self, widget, event):
         Game.MouseX = int(event.x)
@@ -901,19 +911,29 @@ class Pong3D(activity.Activity):
             Game.MouseDown = 1
         if event.type == gtk.gdk.BUTTON_RELEASE:
             Game.MouseDown = 0
-        #self.tick()
 
-    def on_expose (self, widget, event):
+    def on_destroy (self, widget):
+        self.running = False
+
+    def tick (self):
         # Clear mouse cursor
-        if not widget.cursor_initialized:
-            widget.cursor_initialized = True
+        if not self.drawarea.window:
+            return True
+        if not self.drawarea.cursor_initialized:
+            self.drawarea.cursor_initialized = True
             pixmap = gtk.gdk.Pixmap(None, 1, 1, 1)
             color = gtk.gdk.Color()
             cursor = gtk.gdk.Cursor(pixmap, pixmap, color, color, 0, 0)
-            widget.window.set_cursor(cursor)
-        
-        Game.drawarea = widget
-        Game.cairo = widget.window.cairo_create()
+            self.drawarea.window.set_cursor(cursor)
+
+        self.drawareactx = self.drawarea.window.cairo_create()
+
+        Game.cairosurf = cairo.ImageSurface(cairo.FORMAT_RGB24, self.width, self.height)
+        Game.cairo = cairo.Context(Game.cairosurf)
+
+        Game.cairo.set_antialias(cairo.ANTIALIAS_NONE)
+        #Game.cairo.set_line_cap(cairo.LINE_CAP_BUTT)
+        #Game.cairo.set_line_width(1.0)
 
         # Clear the screen.
         Game.cairo.set_source_rgba(0, 0, 0)
@@ -934,10 +954,9 @@ class Pong3D(activity.Activity):
         elif (Game.Sequence == 5): # You Win
             SequenceYouWin()
 
-    def on_destroy (self, widget):
-        self.running = False
+        self.drawareactx.set_source_surface(Game.cairosurf, 0, 0)
+        self.drawareactx.rectangle(0, 0, self.width, self.height)
+        self.drawareactx.fill()
 
-    def tick (self):
-        self.drawarea.queue_draw()
         return True
 
