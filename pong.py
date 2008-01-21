@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""3dpong - 3D action game by Wade Brainerd."""
+"""3DPong - 3D action game by Wade Brainerd."""
 
 import logging, os, time, math, threading, random
 from gettext import gettext as _
@@ -15,844 +15,907 @@ log.setLevel(logging.DEBUG)
 logging.basicConfig()
 gtk.add_log_handlers()
 
-StageDescs = [
-    { 'Name': _('normal'), 'AISpeed': 2, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSpeed': 3, 'PlayerWidth': 40, 'PlayerHeight': 30, 'AIWidth': 40, 'AIHeight': 30 },
-    { 'Name': _('bounce'), 'AISpeed': 4, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 1, 'StageCrossGravity': 0, 'BallSpeed': 3, 'PlayerWidth': 50, 'PlayerHeight': 40, 'AIWidth': 50, 'AIHeight': 40 },
-    { 'Name': _('wide'),   'AISpeed': 8, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 1, 'StageCrossGravity': 0, 'BallSpeed': 4, 'PlayerWidth': 160, 'PlayerHeight': 20, 'AIWidth': 160, 'AIHeight': 20 },
-    { 'Name': _('deep'),   'AISpeed': 10, 'AIRecenter': 0, 'StageDepth': 500, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSpeed': 10, 'PlayerWidth': 40, 'PlayerHeight': 50, 'AIWidth': 40, 'AIHeight': 40 },
-    { 'Name': _('rotate'), 'AISpeed': 10, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 1, 'BallSpeed': 5, 'PlayerWidth': 40, 'PlayerHeight': 30, 'AIWidth': 40, 'AIHeight': 30 },
-]
-
-class VectorType:
-    def __init__(self):
-        self.X = 0
-        self.Y = 0
-        self.Z = 0
-
-class RectType:
-    def __init__(self):
-        self.Top = 0
-        self.Left = 0
-        self.Right = 0
-        self.Bottom = 0
-
-ZeroVector3D = VectorType()
-
-class BallType:
-    def __init__(self):
-        self.LastPos = VectorType()
-        self.LastVel = VectorType()
-        self.Pos = VectorType()
-        self.Vel = VectorType()
-    
-class PaddleType:
-    def __init__(self):
-        # Center of the paddle
-        self.Pos = VectorType()
-        
-        # Physics stuff
-        self.Delta = VectorType() # Amount moved since last update for spin calc.
-        self.HalfWidth = 0
-        self.HalfHeight = 0
-
-        # Stuff for moving the paddle forward.
-        self.TargetZ = 0
-        self.DefaultZ = 0
-        self.ForwardZ = 0
-
-        # AI stuff
-        self.Vel = VectorType()
-        self.Speed = 0
-
-        # Game stuff
-        self.Score = 0
-
-class StageType:
-    def __init__(self):
-        # How long the stage is from near side to far side.
-        self.Depth = 0
-        self.Window = RectType()
-
-        self.Gravity = 0
-        self.CrossGravity = 0
-        self.BallSpeed = 0
-        self.BallSize = 5*256
-
-class AIType:
-    def __init__(self):
-        self.Speed = 0
-        self.Recenter = False
-
-class GameType:
-    def __init__(self):
-        self.EndTimeout = 0
-
-        self.AI = AIType()
-
-        self.Stage = StageType()
-        self.Ball = BallType()
-        self.Paddle1 = PaddleType()
-        self.Paddle2 = PaddleType()
-        
-        # Score variable from last frame, to see if we need to erase the scoring graphic.
-        self.LastScore = 0
-        
-        # Current stage.
-        self.CurLevel = 0
-
-        # Variables affecting the sequencer.
-        self.Sequence = 0
-        #self.Sequence = 3  # Use to start at gameplay
-        self.Brightness = 100
-        self.Timer0 = 0;
-        self.Timer1 = 0;
-        
-        # Current mouse state.
-        self.MouseX = 0
-        self.MouseY = 0
-        self.MouseDown = 0
-
-        self.XPoints = [ (0,0), (0.3,0), (0.5,0.3), (0.7,0), (1,0), (0.7,0.5), (1,1), (0.7,1), (0.5,0.6), (0.3,1), (0,1), (0.3,0.5) ]
-
-Game = GameType()
-
-# Virtual screen dimensions
-# This game was ported from a Palm OS app, and it would be difficult to change all the internal calculations to a new resolution. 
-ScreenWidth = 320
-ScreenHeight = 240
-ActualScreenWidth = 1200
-ActualScreenHeight = 825
-
-DisplayCenterX = 160*256
-DisplayCenterY = 120*256
-
-# Game constants
-ViewportScale = 100*256
-TimeRes = 32
-
 def clamp(a, b, c):
     if (a<b): return b
     elif (a>c): return c
     else: return a
 
-def max(a,b):
-    if (a>b): return a
-    else: return b
-    
-def GetProjectedX(X, Y, Z):
-    return (DisplayCenterX + ( X - DisplayCenterX ) * ViewportScale / ( Z + ViewportScale )) * ActualScreenWidth/ScreenWidth / 256
+def to_fixed(a):
+    return int(a * 256)
 
-def GetProjectedY(X, Y, Z):
-    return (DisplayCenterY + ( Y - DisplayCenterY ) * ViewportScale / ( Z + ViewportScale )) * ActualScreenHeight/ScreenHeight / 256
+def from_fixed(a):
+    return a >> 8
 
-def DrawLine3D(X1, Y1, Z1, X2, Y2, Z2, draw, color=None):
-    if color == None: color = (255,255,255)
-    Game.cairo.set_source_rgb(color[0]/255.0*Game.Brightness/100.0, color[1]/255.0*Game.Brightness/100.0, color[2]/255.0*Game.Brightness/100.0)
-    Game.cairo.move_to(GetProjectedX( X1, Y1, Z1 ), GetProjectedY( X1, Y1, Z1 ))
-    Game.cairo.line_to(GetProjectedX( X2, Y2, Z2 ), GetProjectedY( X2, Y2, Z2 ))
-    Game.cairo.stroke()
+def fixed_mul(a, b):
+    return (a * b) >> 8
 
-def DrawRect3D(Rect, Depth, draw):
-    Temp = RectType()
+class Vector:
+    def __init__(self, x=0, y=0, z=0):
+        self.x = x
+        self.y = y
+        self.z = z
 
-    Temp.Left = GetProjectedX( Rect.Left, Rect.Top, Depth ) + 1
-    Temp.Top = GetProjectedY( Rect.Left, Rect.Top, Depth ) + 1
-    Temp.Right = GetProjectedX( Rect.Right, Rect.Bottom, Depth ) - 1
-    Temp.Bottom = GetProjectedY( Rect.Right, Rect.Bottom, Depth ) - 1
+zerovec = Vector(0, 0, 0)
 
-    Game.cairo.set_source_rgb(Game.Brightness/100.0, Game.Brightness/100.0, Game.Brightness/100.0)
-    Game.cairo.move_to(Temp.Left, Temp.Top)
-    Game.cairo.line_to(Temp.Right, Temp.Top)
-    Game.cairo.line_to(Temp.Right, Temp.Bottom)
-    Game.cairo.line_to(Temp.Left, Temp.Bottom)
-    Game.cairo.line_to(Temp.Left, Temp.Top)
-    Game.cairo.stroke()
+class Color:
+    def __init__(self, r=255, g=255, b=255):
+        self.r = r
+        self.g = g
+        self.b = b
 
-def DrawCircle3D(X, Y, Z, radius, draw, color=None):
-    if color == None: color = (255,255,255)
-    r = GetProjectedX(X+radius, Y, Z)-GetProjectedX(X, Y, Z)
-    if r < 1:
-        return
-    Game.cairo.set_source_rgb(color[0]/255.0*Game.Brightness/100.0, color[1]/255.0*Game.Brightness/100.0, color[2]/255.0*Game.Brightness/100.0)
-    x = GetProjectedX( X, Y, Z )
-    y = GetProjectedY( X, Y, Z )
-    Game.cairo.move_to(x, y-r)
-    Game.cairo.arc(x, y, r, 0, 2*math.pi)
-    Game.cairo.stroke()
+class Rect:
+    def __init__(self):
+        self.top = 0
+        self.left = 0
+        self.right = 0
+        self.bottom = 0
 
-def DrawFilledCircle3D(X, Y, Z, radius, draw, color=None):
-    if color == None: color = (255,255,255)
-    r = GetProjectedX(X+radius, Y, Z)-GetProjectedX(X, Y, Z)
-    if r < 1:
-        return
-    Game.cairo.set_source_rgb(color[0]/255.0*Game.Brightness/100.0, color[1]/255.0*Game.Brightness/100.0, color[2]/255.0*Game.Brightness/100.0)
-    Game.cairo.arc(GetProjectedX( X, Y, Z ), GetProjectedY( X, Y, Z ), r, 0, 2*math.pi)
-    Game.cairo.fill()
+stage_descs = [
+    { 'Name': _('normal'), 'AISpeed': 1, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSize': 1, 'BallSpeed': 3, 'PaddleWidth': 20, 'PaddleHeight': 20 },
+    { 'Name': _('bounce'), 'AISpeed': 2, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 1, 'StageCrossGravity': 0, 'BallSize': 1, 'BallSpeed': 3, 'PaddleWidth': 20, 'PaddleHeight': 20 },
+    { 'Name': _('wide'),   'AISpeed': 4, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 1, 'StageCrossGravity': 0, 'BallSize': 1, 'BallSpeed': 4, 'PaddleWidth': 100, 'PaddleHeight': 15 },
+    { 'Name': _('deep'),   'AISpeed': 5, 'AIRecenter': 0, 'StageDepth': 500, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25 },
+    { 'Name': _('rotate'), 'AISpeed': 5, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 1, 'BallSize': 1, 'BallSpeed': 5, 'PaddleWidth': 25, 'PaddleHeight': 20 },
+]
 
-def DrawEllipse3D(X, Y, Z, radiusX, radiusY, draw, color=None):
-    if (color == None): color = (255,255,255)
-    w = radiusX*256/2/max(1,Z)
-    h = radiusY*256/2/max(1,Z)
-    #pygame.draw.ellipse(Game.screen, 
-    #    (color[0]*Game.Brightness/100, color[1]*Game.Brightness/100, color[2]*Game.Brightness/100), 
-    #    pygame.Rect(GetProjectedX( X, Y, Z )-w, GetProjectedY( X, Y, Z )-h, max(2,w*2), max(2,h*2)), 1) 
 
-def DrawText (text, x, y, size):
-    Game.cairo.set_font_size(size)
-    x_bearing, y_bearing, width, height = Game.cairo.text_extents(text)[:4]
-    if x == -1: x = ActualScreenWidth/2
-    if y == -1: y = ActualScreenHeight/2
-    Game.cairo.move_to(x - width/2 - x_bearing, y - height/2 - y_bearing)
-    Game.cairo.show_text(text)
+# Virtual screen dimensions
+# This game was ported from a Palm OS app, and it would be difficult to change all the internal calculations to a new resolution. 
+actual_screen_width = 1200
+actual_screen_height = 825
 
-def DrawStage( Stage, draw ):
-    Window = Stage.Window
+# Game constants
+viewport_scale = to_fixed(100)
+time_res = 32
 
-    # Near and far rectangles   
-    DrawRect3D( Window, 0, draw )
-    DrawRect3D( Window, Stage.Depth, draw )
+def project_x(x, y, z):
+    return (to_fixed(50) + ( x - to_fixed(50) ) * viewport_scale / ( z + viewport_scale )) * actual_screen_width/100 / 256
 
-    # Diagonals
-    DrawLine3D( Window.Left, Window.Top, 1, Window.Left, Window.Top, Stage.Depth, draw )
-    DrawLine3D( Window.Left, Window.Bottom, 1, Window.Left, Window.Bottom, Stage.Depth, draw )
-    DrawLine3D( Window.Right, Window.Top, 1, Window.Right, Window.Top, Stage.Depth, draw )
-    DrawLine3D( Window.Right, Window.Bottom, 1, Window.Right, Window.Bottom, Stage.Depth, draw )
+def project_y(x, y, z):
+    return (to_fixed(50) + ( y - to_fixed(50) ) * viewport_scale / ( z + viewport_scale )) * actual_screen_height/100 / 256
 
-    i = 1
-    while i < 5:
-        x = i*(Window.Right-Window.Left)/5
-        i += 1
-        DrawLine3D(x, Window.Top, 1, x, Window.Top, Stage.Depth, draw, (64, 64, 64))
-        DrawLine3D(x, Window.Bottom, 1, x, Window.Bottom, Stage.Depth, draw, (64, 64, 64))
+PRIM_LINE = 0
+PRIM_FILL = 1
 
-    i = 1
-    while i < 5:
-        x = i*(Window.Bottom-Window.Top)/5
-        i += 1
-        DrawLine3D(Window.Left, x, 1, Window.Left, x, Stage.Depth, draw, (64, 64, 64))
-        DrawLine3D(Window.Right, x, 1, Window.Right, x, Stage.Depth, draw, (64, 64, 64))
-        
-    i = 1
-    while i < 5:
-        x = i*(Stage.Depth)/5
-        i += 1
-        DrawLine3D(Window.Left, Window.Top, x, Window.Right, Window.Top, x, draw, (64, 64, 64))
-        DrawLine3D(Window.Left, Window.Bottom, x, Window.Right, Window.Bottom, x, draw, (64, 64, 64))
-        DrawLine3D(Window.Left, Window.Top, x, Window.Left, Window.Bottom, x, draw, (64, 64, 64))
-        DrawLine3D(Window.Right, Window.Top, x, Window.Right, Window.Bottom, x, draw, (64, 64, 64))
+curprim = PRIM_LINE
 
-def DrawBall( Ball, Stage, draw ):
-    # Draw the ball.
-    DrawFilledCircle3D(Ball.Pos.X, Ball.Pos.Y, Ball.Pos.Z, Game.Stage.BallSize, draw)
-
-    # Draw the shadow.
-    DrawEllipse3D(Ball.Pos.X, Stage.Window.Bottom, Ball.Pos.Z, Game.Stage.BallSize*2, Game.Stage.BallSize, draw, (64, 64, 64))
-
-def DrawPaddle( Paddle, Stage, draw ):
-    Temp = RectType()
-    Temp.Left = Paddle.Pos.X - Paddle.HalfWidth 
-    Temp.Right = Paddle.Pos.X + Paddle.HalfWidth    
-    Temp.Top = Paddle.Pos.Y - Paddle.HalfHeight 
-    Temp.Bottom = Paddle.Pos.Y + Paddle.HalfHeight  
-    
-    DrawRect3D( Temp, Paddle.Pos.Z, draw )
-
-    DrawLine3D( 
-        Temp.Left + ( ( Temp.Right - Temp.Left ) >> 1 ), Temp.Bottom, Paddle.Pos.Z,
-        Temp.Left + ( ( Temp.Right - Temp.Left ) >> 1 ), Stage.Window.Bottom, Paddle.Pos.Z, draw )
-
-# Check paddle inputs and apply to Paddle.
-def UpdatePaddleFromPen ( Paddle, Stage ):
-    LastPos = VectorType()
-    LastPos.X = Paddle.Pos.X
-    LastPos.Y = Paddle.Pos.Y
-    LastPos.Z = Paddle.Pos.Z
-
-    PenX = Game.MouseX*ScreenWidth/ActualScreenWidth
-    PenY = Game.MouseY*ScreenHeight/ActualScreenHeight
-    PenDown = 1
-
-    if ( Game.MouseDown ):
-        Paddle.TargetZ = Paddle.ForwardZ
+def flush_prim ():
+    global curprim
+    if curprim == PRIM_LINE:
+        game.cairo.stroke()
     else:
-        Paddle.TargetZ = Paddle.DefaultZ
+        game.cairo.fill()
 
-    # Snaps forward, eases back.
-    if ( Paddle.Pos.Z < Paddle.TargetZ ):
-        if ( Paddle.Delta.Z < 4*256 ):
-            Paddle.Delta.Z = 6*256
-        Paddle.Pos.Z += Paddle.Delta.Z + 2*256
-        if ( Paddle.Pos.Z > Paddle.TargetZ ):
-            Paddle.Pos.Z = Paddle.TargetZ
+def begin_prim (prim):
+    global curprim
+    if prim != curprim:
+        flush_prim()
+        curprim = prim
 
-    if ( Paddle.Pos.Z > Paddle.TargetZ ):
-        Paddle.Pos.Z += ( Paddle.TargetZ - Paddle.Pos.Z ) / 4
+def set_color (color):
+    flush_prim()
+    game.cairo.set_source_rgb(color.r/255.0, color.g/255.0, color.b/255.0)
 
-    # Get the 2d position from the pen.
-    if ( PenDown ): 
-        Paddle.Pos.X = PenX*256
-        Paddle.Pos.Y = PenY*256
-        
-        # Clip the paddle position.
-        if ( Paddle.Pos.X < Paddle.HalfWidth ):
-            Paddle.Pos.X = Paddle.HalfWidth
+def line3d(x1, y1, z1, x2, y2, z2):
+    game.cairo.move_to(project_x( x1, y1, z1 ), project_y( x1, y1, z1 ))
+    game.cairo.line_to(project_x( x2, y2, z2 ), project_y( x2, y2, z2 ))
 
-        if ( Paddle.Pos.Y < Paddle.HalfHeight ): 
-            Paddle.Pos.Y = Paddle.HalfHeight
+def rect3d(rect, depth):
+    x1 = project_x( rect.left, rect.top, depth ) + 1
+    y1 = project_y( rect.left, rect.top, depth ) + 1
+    x2 = project_x( rect.right, rect.bottom, depth ) - 1
+    y2 = project_y( rect.right, rect.bottom, depth ) - 1
 
-        if ( Paddle.Pos.X > Stage.Window.Right - Paddle.HalfWidth ):
-            Paddle.Pos.X = Stage.Window.Right - Paddle.HalfWidth
+    game.cairo.move_to(x1, y1)
+    game.cairo.line_to(x2, y1)
+    game.cairo.line_to(x2, y2)
+    game.cairo.line_to(x1, y2)
+    game.cairo.line_to(x1, y1)
 
-        if ( Paddle.Pos.Y > Stage.Window.Bottom - Paddle.HalfHeight ):
-            Paddle.Pos.Y = Stage.Window.Bottom - Paddle.HalfHeight
+def circle3d(x, y, z, radius):
+    r = project_x(x+radius, y, z)-project_x(x, y, z)
+    if r < 1: return
 
-    Paddle.Delta.X = Paddle.Pos.X - LastPos.X
-    Paddle.Delta.Y = Paddle.Pos.Y - LastPos.Y
-    Paddle.Delta.Z = Paddle.Pos.Z - LastPos.Z
+    x = project_x( x, y, z )
+    y = project_y( x, y, z )
 
-# Compute AI and move Paddle.
-def UpdatePaddleAI( Paddle, Ball, Stage ):
-    # Only move when the ball is coming back, that way it appears to react to the players hit.
-    # Actually, start moving just before the player hits it.
-    if ( Ball.Vel.Z > 0 or Ball.Vel.Z < 0 and Ball.Pos.Z < 30*256) :
-        # Acceleration towards the ball.
-        if ( math.fabs( ( Paddle.Pos.X - Ball.Pos.X ) ) > 5*256 ):
-            if ( Paddle.Pos.X < Ball.Pos.X ):
-                Paddle.Vel.X+=4*256
-            if ( Paddle.Pos.X > Ball.Pos.X ):
-                Paddle.Vel.X-=4*256
-            
-        if ( math.fabs( ( Paddle.Pos.Y - Ball.Pos.Y ) ) > 5*256 ):
-            if ( Paddle.Pos.Y < Ball.Pos.Y ):
-                Paddle.Vel.Y+=4*256
-            if ( Paddle.Pos.Y > Ball.Pos.Y ): 
-                Paddle.Vel.Y-=4*256
-        
-        # Speed clamping
-        Paddle.Vel.X = clamp( Paddle.Vel.X, -Game.AI.Speed, Game.AI.Speed )
-        Paddle.Vel.Y = clamp( Paddle.Vel.Y, -Game.AI.Speed, Game.AI.Speed )
-    elif ( Ball.Pos.Z < Game.Stage.Depth/2 ):
-        Paddle.Vel.X = 0
-        Paddle.Vel.Y = 0
-        # Drift towards the center.
-        if ( Game.AI.Recenter ):
-            Paddle.Pos.X += ( ScreenWidth/2*256 - Paddle.Pos.X ) / 4
-            Paddle.Pos.Y += ( ScreenWidth/2*256 - Paddle.Pos.Y ) / 4
-            
-    # Friction
-    if ( Paddle.Vel.X > 0 ):
-        Paddle.Vel.X -= 1
-    if ( Paddle.Vel.X < 0 ):
-        Paddle.Vel.X += 1
-        
-    if ( Paddle.Vel.Y > 0 ):
-        Paddle.Vel.Y -= 1
-    if ( Paddle.Vel.Y < 0 ):
-        Paddle.Vel.Y += 1
-        
-    Paddle.Pos.X += Paddle.Vel.X
-    Paddle.Pos.Y += Paddle.Vel.Y
+    game.cairo.move_to(x+r, y)
+    game.cairo.arc(x, y, r, 0, 2*math.pi)
+
+def draw_text (text, x, y, size):
+    game.cairo.set_font_size(size)
+    x_bearing, y_bearing, width, height = game.cairo.text_extents(text)[:4]
+
+    if x == -1: x = actual_screen_width/2
+    if y == -1: y = actual_screen_height/2
+
+    game.cairo.move_to(x - width/2 - x_bearing, y - height/2 - y_bearing)
+    game.cairo.show_text(text)
+
+class Ball:
+    def __init__(self):
+        self.lastpos = Vector()
+        self.lastvel = Vector()
+        self.pos = Vector()
+        self.vel = Vector()
     
-    # Clip the paddle position
-    if ( Paddle.Pos.X < Paddle.HalfWidth ): Paddle.Pos.X = Paddle.HalfWidth
-    if ( Paddle.Pos.Y < Paddle.HalfHeight ): Paddle.Pos.Y = Paddle.HalfHeight
-    if ( Paddle.Pos.X > Stage.Window.Right - Paddle.HalfWidth ): Paddle.Pos.X = Stage.Window.Right - Paddle.HalfWidth
-    if ( Paddle.Pos.Y > Stage.Window.Bottom - Paddle.HalfHeight ): Paddle.Pos.Y = Stage.Window.Bottom - Paddle.HalfHeight
-
-# 0 if nobody scored, 1 if Paddle1 scored, 2 if Paddle2 scored.
-def UpdateBall ( Ball, Paddle1, Paddle2, Stage ):
-    # Ball collisions are handled very accurately, as this is the basis of the game.
-    # All times are in 1sec/TimeRes units.
-    # 1. Loop through all the surfaces and finds the first one the ball will collide with
-    # in this animation frame (if any). 
-    # 2. Update the Ball velocity based on the collision, and advance the current time to 
-    # the exact time of the collision.
-    # 3. Goto step 1, until no collisions remain in the current animation frame.
-
-    TimeLeft = TimeRes                  # Time remaining in this animation frame.
-    FirstCollisionTime = 0              # -1 means no collision found.
-    FirstCollisionVel = VectorType()    # New ball velocity from first collision.
-    FirstCollisionType = 0              # 0 for normal collision (wall), otherwise the scorezone number hit. 
-
-    Ball.LastPos.X = Ball.Pos.X
-    Ball.LastPos.Y = Ball.Pos.Y
-    Ball.LastPos.Z = Ball.Pos.Z
-    Ball.LastVel.X = Ball.Vel.X
-    Ball.LastVel.Y = Ball.Vel.Y
-    Ball.LastVel.Z = Ball.Vel.Z
-
-    NextBallPos = VectorType()          # Hypothetical ball position assuming no collision.
-    Time = 0                            # Time of current collision.
+    def draw (self, stage):
+        # Draw the ball.
+        begin_prim(PRIM_FILL)
+        circle3d(self.pos.x, self.pos.y, self.pos.z, stage.ballsize)
     
-    CollisionType = 0                   # Stored return value.
+        # Draw the shadow.
+        #DrawEllipse3D(Ball.pos.x, Stage.window.bottom, Ball.pos.z, game.stage.ballsize*2, game.stage.ballsize, (64, 64, 64))
 
-    Iterations = 0
+    def setup (self, speed):
+        self.pos = Vector(to_fixed(50), to_fixed(25), game.stage.depth/2)
+        self.vel = Vector(to_fixed(2), to_fixed(2), speed)
 
-    while True:
-        Iterations = Iterations+1
-        if ( Iterations > 5 ):
-            break
-
-        # Calculate new next ball position.
-        NextBallPos.X = Ball.Pos.X + (Ball.Vel.X * TimeLeft) / TimeRes
-        NextBallPos.Y = Ball.Pos.Y + (Ball.Vel.Y * TimeLeft) / TimeRes
-        NextBallPos.Z = Ball.Pos.Z + (Ball.Vel.Z * TimeLeft) / TimeRes
-
-        # Reset FirstCollisionTime.     
-        FirstCollisionTime = -1
-
-        # Check stage walls.  First checks to see if the boundary was crossed, if so then calculates time, etc.
-        if ( NextBallPos.X - Game.Stage.BallSize <= 0 ): # Left wall
-            Time = ( Ball.Pos.X - Game.Stage.BallSize ) * TimeRes / -Ball.Vel.X # negative VX is to account for left wall facing.
-            if ( FirstCollisionTime == -1 or Time < FirstCollisionTime ):
-                # Set new first collision.
-                FirstCollisionTime = Time
-                FirstCollisionVel.X = -Ball.Vel.X
-                FirstCollisionVel.Y = Ball.Vel.Y
-                FirstCollisionVel.Z = Ball.Vel.Z
-                FirstCollisionType = 5
-        if ( NextBallPos.X + Game.Stage.BallSize >= Stage.Window.Right ): # Right wall
-            Time = ( Stage.Window.Right - ( Ball.Pos.X + Game.Stage.BallSize ) ) * TimeRes / Ball.Vel.X
-            if ( FirstCollisionTime == -1 or Time < FirstCollisionTime ):
-                # Set new first collision.
-                FirstCollisionTime = Time
-                FirstCollisionVel.X = -Ball.Vel.X
-                FirstCollisionVel.Y = Ball.Vel.Y
-                FirstCollisionVel.Z = Ball.Vel.Z
-                FirstCollisionType = 5
-        if ( NextBallPos.Y - Game.Stage.BallSize <= 0 and Ball.Vel.Y != 0): # Top wall
-            Time = ( Ball.Pos.Y - Game.Stage.BallSize ) * TimeRes / -Ball.Vel.Y
-            if ( FirstCollisionTime == -1 or Time < FirstCollisionTime ):
-                # Set new first collision.
-                FirstCollisionTime = Time
-                FirstCollisionVel.X = Ball.Vel.X
-                FirstCollisionVel.Y = -Ball.Vel.Y
-                FirstCollisionVel.Z = Ball.Vel.Z
-                FirstCollisionType = 5
-        if ( NextBallPos.Y + Game.Stage.BallSize >= Stage.Window.Bottom  and Ball.Vel.Y != 0): # Bottom wall
-            Time = ( Stage.Window.Bottom - ( Ball.Pos.Y + Game.Stage.BallSize ) ) * TimeRes / Ball.Vel.Y
-            if ( FirstCollisionTime == -1 or Time < FirstCollisionTime ):
-                # Set new first collision.
-                FirstCollisionTime = Time
-                FirstCollisionVel.X = Ball.Vel.X
-                FirstCollisionVel.Y = -Ball.Vel.Y
-                FirstCollisionVel.Z = Ball.Vel.Z
-                FirstCollisionType = 5
-        if ( NextBallPos.Z <= 0 ): # Front wall
-            Time = Ball.Pos.Z * TimeRes / -Ball.Vel.Z
-            if ( FirstCollisionTime == -1 or Time < FirstCollisionTime ):
-                # Set new first collision.
-                FirstCollisionTime = Time
-                FirstCollisionVel.X = Ball.Vel.X #(random.randint(0, 3))-1 * Game.Stage.BallSpeed
-                FirstCollisionVel.Y = Ball.Vel.Y #(random.randint(0, 3))-1 * Game.Stage.BallSpeed
-                FirstCollisionVel.Z = Game.Stage.BallSpeed
-                FirstCollisionType = 2
-        if ( NextBallPos.Z >= Stage.Depth ): # Back wall
-            Time = ( Stage.Depth - Ball.Pos.Z ) * TimeRes / Ball.Vel.Z
-            if ( FirstCollisionTime == -1 or Time < FirstCollisionTime ):
-                # Set new first collision.
-                FirstCollisionTime = Time
-                FirstCollisionVel.X = Ball.Vel.X #(random.randint(0, 3))-1 * Game.Stage.BallSpeed
-                FirstCollisionVel.Y = Ball.Vel.Y #(random.randint(0, 3))-1 * Game.Stage.BallSpeed
-                FirstCollisionVel.Z = -Game.Stage.BallSpeed
-                FirstCollisionType = 1
-        # Paddle collision.  Paddle collisions are inaccurate, in that it doesn't take into account the velocity of 
-        # the ball in its 2D check, it uses the original 2D position.
-        if (        Ball.Vel.Z < 0 
-                and ( Ball.Pos.Z >= Paddle1.Pos.Z or Ball.Pos.Z >= Paddle1.Pos.Z - math.fabs(Paddle1.Delta.Z) ) 
-                and ( NextBallPos.Z <= Paddle1.Pos.Z or NextBallPos.Z <= Paddle1.Pos.Z + math.fabs(Paddle1.Delta.Z) )
-                and Ball.Pos.X >= Paddle1.Pos.X - Paddle1.HalfWidth
-                and Ball.Pos.X <= Paddle1.Pos.X + Paddle1.HalfWidth 
-                and Ball.Pos.Y >= Paddle1.Pos.Y - Paddle1.HalfHeight
-                and Ball.Pos.Y <= Paddle1.Pos.Y + Paddle1.HalfHeight ):
-            Time = ( Ball.Pos.Z - Paddle1.Pos.Z ) * TimeRes / -Ball.Vel.Z
-            if ( FirstCollisionTime == -1 or Time <= FirstCollisionTime ):
-                # Set new first collision.
-                FirstCollisionTime = Time
-                FirstCollisionVel.X = Ball.Vel.X
-                FirstCollisionVel.Y = Ball.Vel.Y
-                FirstCollisionVel.Z = -Ball.Vel.Z
-
-                # If paddle is moving forward, bounce the ball off.
-                if ( Paddle1.Delta.Z > 0 ):
-                    FirstCollisionVel.Z += 4*246
-
-                    # Apply some pong like angling based on where it hits the paddle.
-                    if ( NextBallPos.X - Paddle1.Pos.X > 20 ):
-                        FirstCollisionVel.X += 2*256
-                    if ( NextBallPos.X - Paddle1.Pos.X < -20 ):
-                        FirstCollisionVel.X -= 2*256
-
-                    if ( NextBallPos.Y - Paddle1.Pos.Y > 15 ):
-                        FirstCollisionVel.Y += 2*256
-                    if ( NextBallPos.Y - Paddle1.Pos.Y < -15 ):
-                        FirstCollisionVel.Y -= 2*256
-                # Likewise if paddle is moving backwards, cushion it.
-                if ( Paddle1.Delta.Z < 0 ):
-                    FirstCollisionVel.Z -= 2*256
+    # 0 if nobody scored, 1 if Paddle1 scored, 2 if Paddle2 scored.
+    def update (self, paddle1, paddle2, stage):
+        # Ball collisions are handled very accurately, as this is the basis of the game.
+        # All times are in 1sec/time_res units.
+        # 1. Loop through all the surfaces and finds the first one the ball will collide with
+        # in this animation frame (if any). 
+        # 2. Update the Ball velocity based on the collision, and advance the current time to 
+        # the exact time of the collision.
+        # 3. Goto step 1, until no collisions remain in the current animation frame.
+    
+        time_left = time_res                  # Time remaining in this animation frame.
+        first_collision_time = 0              # -1 means no collision found.
+        first_collision_vel = Vector()    # New ball velocity from first collision.
+        first_collision_type = 0              # 0 for normal collision (wall), otherwise the scorezone number hit. 
+    
+        self.lastpos.x = self.pos.x
+        self.lastpos.y = self.pos.y
+        self.lastpos.z = self.pos.z
+        self.lastvel.x = self.vel.x
+        self.lastvel.y = self.vel.y
+        self.lastvel.z = self.vel.z
+    
+        next_ball_pos = Vector()          # Hypothetical ball position assuming no collision.
+        cur_time = 0                            # cur_time of current collision.
+        
+        collision_type = 0                   # Stored return value.
+    
+        iterations = 0
+    
+        while True:
+            iterations = iterations+1
+            if ( iterations > 5 ):
+                break
+    
+            # Calculate new next ball position.
+            next_ball_pos.x = self.pos.x + (self.vel.x * time_left) / time_res
+            next_ball_pos.y = self.pos.y + (self.vel.y * time_left) / time_res
+            next_ball_pos.z = self.pos.z + (self.vel.z * time_left) / time_res
+    
+            # Reset first_collision_cur_time.     
+            first_collision_cur_time = -1
+    
+            # Check stage walls.  First checks to see if the boundary was crossed, if so then calculates cur_time, etc.
+            if ( next_ball_pos.x - game.stage.ballsize <= 0 ): # Left wall
+                cur_time = ( self.pos.x - game.stage.ballsize ) * time_res / -self.vel.x # negative Vx is to account for left wall facing.
+                if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
+                    # Set new first collision.
+                    first_collision_cur_time = cur_time
+                    first_collision_vel.x = -self.vel.x
+                    first_collision_vel.y = self.vel.y
+                    first_collision_vel.z = self.vel.z
+                    first_collision_type = 5
+            if ( next_ball_pos.x + game.stage.ballsize >= stage.window.right ): # Right wall
+                cur_time = ( stage.window.right - ( self.pos.x + game.stage.ballsize ) ) * time_res / self.vel.x
+                if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
+                    # Set new first collision.
+                    first_collision_cur_time = cur_time
+                    first_collision_vel.x = -self.vel.x
+                    first_collision_vel.y = self.vel.y
+                    first_collision_vel.z = self.vel.z
+                    first_collision_type = 5
+            if ( next_ball_pos.y - game.stage.ballsize <= 0 and self.vel.y != 0): # Top wall
+                cur_time = ( self.pos.y - game.stage.ballsize ) * time_res / -self.vel.y
+                if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
+                    # Set new first collision.
+                    first_collision_cur_time = cur_time
+                    first_collision_vel.x = self.vel.x
+                    first_collision_vel.y = -self.vel.y
+                    first_collision_vel.z = self.vel.z
+                    first_collision_type = 5
+            if ( next_ball_pos.y + game.stage.ballsize >= stage.window.bottom  and self.vel.y != 0): # Bottom wall
+                cur_time = ( stage.window.bottom - ( self.pos.y + game.stage.ballsize ) ) * time_res / self.vel.y
+                if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
+                    # Set new first collision.
+                    first_collision_cur_time = cur_time
+                    first_collision_vel.x = self.vel.x
+                    first_collision_vel.y = -self.vel.y
+                    first_collision_vel.z = self.vel.z
+                    first_collision_type = 5
+            if ( next_ball_pos.z <= 0 ): # Front wall
+                cur_time = self.pos.z * time_res / -self.vel.z
+                if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
+                    # Set new first collision.
+                    first_collision_cur_time = cur_time
+                    first_collision_vel.x = self.vel.x #(random.randint(0, 3))-1 * game.stage.ballspeed
+                    first_collision_vel.y = self.vel.y #(random.randint(0, 3))-1 * game.stage.ballspeed
+                    first_collision_vel.z = game.stage.ballspeed
+                    first_collision_type = 2
+            if ( next_ball_pos.z >= stage.depth ): # Back wall
+                cur_time = ( stage.depth - self.pos.z ) * time_res / self.vel.z
+                if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
+                    # Set new first collision.
+                    first_collision_cur_time = cur_time
+                    first_collision_vel.x = self.vel.x #(random.randint(0, 3))-1 * game.stage.ballspeed
+                    first_collision_vel.y = self.vel.y #(random.randint(0, 3))-1 * game.stage.ballspeed
+                    first_collision_vel.z = -game.stage.ballspeed
+                    first_collision_type = 1
+            # Paddle collision.  Paddle collisions are inaccurate, in that it doesn't take into account the velocity of 
+            # the ball in its 2D check, it uses the original 2D position.
+            if (        self.vel.z < 0 
+                    and ( self.pos.z >= paddle1.pos.z or self.pos.z >= paddle1.pos.z - math.fabs(paddle1.delta.z) ) 
+                    and ( next_ball_pos.z <= paddle1.pos.z or next_ball_pos.z <= paddle1.pos.z + math.fabs(paddle1.delta.z) )
+                    and self.pos.x >= paddle1.pos.x - paddle1.halfwidth
+                    and self.pos.x <= paddle1.pos.x + paddle1.halfwidth 
+                    and self.pos.y >= paddle1.pos.y - paddle1.halfheight
+                    and self.pos.y <= paddle1.pos.y + paddle1.halfheight ):
+                cur_time = ( self.pos.z - paddle1.pos.z ) * time_res / -self.vel.z
+                if ( first_collision_cur_time == -1 or cur_time <= first_collision_cur_time ):
+                    # Set new first collision.
+                    first_collision_cur_time = cur_time
+                    first_collision_vel.x = self.vel.x
+                    first_collision_vel.y = self.vel.y
+                    first_collision_vel.z = -self.vel.z
+    
+                    # If paddle is moving forward, bounce the ball off.
+                    if ( paddle1.delta.z > 0 ):
+                        first_collision_vel.z += 4*246
+    
+                        # Apply some pong like angling based on where it hits the paddle.
+                        if ( next_ball_pos.x - paddle1.pos.x > 20 ):
+                            first_collision_vel.x += 2*256
+                        if ( next_ball_pos.x - paddle1.pos.x < -20 ):
+                            first_collision_vel.x -= 2*256
+    
+                        if ( next_ball_pos.y - paddle1.pos.y > 15 ):
+                            first_collision_vel.y += 2*256
+                        if ( next_ball_pos.y - paddle1.pos.y < -15 ):
+                            first_collision_vel.y -= 2*256
+                    # Likewise if paddle is moving backwards, cushion it.
+                    if ( paddle1.delta.z < 0 ):
+                        first_collision_vel.z -= 2*256
+                    
+                    first_collision_type = 3
+            # Computer paddle.
+            if (        self.vel.z > 0 
+                    and ( self.pos.z <= paddle2.pos.z ) 
+                    and ( next_ball_pos.z >= paddle2.pos.z )
+                    and self.pos.x >= paddle2.pos.x - paddle2.halfwidth
+                    and self.pos.x <= paddle2.pos.x + paddle2.halfwidth 
+                    and self.pos.y >= paddle2.pos.y - paddle2.halfheight
+                    and self.pos.y <= paddle2.pos.y + paddle2.halfheight ): # Paddle 2
+                cur_time = ( paddle2.pos.z - self.pos.z ) * time_res / self.vel.z
+                if ( first_collision_cur_time == -1 or cur_time <= first_collision_cur_time ):
+                    # Set new first collision.
+                    first_collision_cur_time = cur_time
+                    first_collision_vel.x = self.vel.x
+                    first_collision_vel.y = self.vel.y
+                    first_collision_vel.z = -self.vel.z + ( paddle1.delta.z > 0 ) * 2*256 + ( paddle1.delta.z < 0 ) * 2*256
+                    first_collision_type = 4
+    
+            # Advance the ball to the point of the first collision.
+            if ( first_collision_cur_time != -1 ):
+                self.pos.x += self.vel.x * first_collision_cur_time / time_res
+                self.pos.y += self.vel.y * first_collision_cur_time / time_res
+                self.pos.z += self.vel.z * first_collision_cur_time / time_res
+                self.vel.x = first_collision_vel.x
+                self.vel.y = first_collision_vel.y
+                self.vel.z = first_collision_vel.z
                 
-                FirstCollisionType = 3
-        # Computer paddle.
-        if (        Ball.Vel.Z > 0 
-                and ( Ball.Pos.Z <= Paddle2.Pos.Z ) 
-                and ( NextBallPos.Z >= Paddle2.Pos.Z )
-                and Ball.Pos.X >= Paddle2.Pos.X - Paddle2.HalfWidth
-                and Ball.Pos.X <= Paddle2.Pos.X + Paddle2.HalfWidth 
-                and Ball.Pos.Y >= Paddle2.Pos.Y - Paddle2.HalfHeight
-                and Ball.Pos.Y <= Paddle2.Pos.Y + Paddle2.HalfHeight ): # Paddle 2
-            Time = ( Paddle2.Pos.Z - Ball.Pos.Z ) * TimeRes / Ball.Vel.Z
-            if ( FirstCollisionTime == -1 or Time <= FirstCollisionTime ):
-                # Set new first collision.
-                FirstCollisionTime = Time
-                FirstCollisionVel.X = Ball.Vel.X
-                FirstCollisionVel.Y = Ball.Vel.Y
-                FirstCollisionVel.Z = -Ball.Vel.Z + ( Paddle1.Delta.Z > 0 ) * 2*256 + ( Paddle1.Delta.Z < 0 ) * 2*256
-                FirstCollisionType = 4
-
-        # Advance the ball to the point of the first collision.
-        if ( FirstCollisionTime != -1 ):
-            Ball.Pos.X += Ball.Vel.X * FirstCollisionTime / TimeRes
-            Ball.Pos.Y += Ball.Vel.Y * FirstCollisionTime / TimeRes
-            Ball.Pos.Z += Ball.Vel.Z * FirstCollisionTime / TimeRes
-            Ball.Vel.X = FirstCollisionVel.X
-            Ball.Vel.Y = FirstCollisionVel.Y
-            Ball.Vel.Z = FirstCollisionVel.Z
-            
-            TimeLeft -= FirstCollisionTime
-            CollisionType = FirstCollisionType
-        if ( not (FirstCollisionTime != -1 and TimeLeft > 0) ):
-            break
-
-    # If there's time left in the frame w/o collision, finish it up.    
-    if TimeLeft > 0:
-        Ball.Pos.X += Ball.Vel.X * TimeLeft / TimeRes
-        Ball.Pos.Y += Ball.Vel.Y * TimeLeft / TimeRes
-        Ball.Pos.Z += Ball.Vel.Z * TimeLeft / TimeRes
-
-    # Apply gravity.
-    Ball.Vel.Y += Game.Stage.Gravity
-    if ( Ball.Pos.Y + Game.Stage.BallSize + 20 > Stage.Window.Bottom and math.fabs(Ball.Vel.Y) == 0 ):
-        Ball.Vel.Y -= 6
-    Ball.Vel.X += Game.Stage.CrossGravity
-
-    # Calculate scores if any collisions with the back wall happened.
-    if CollisionType == 1:
-        Paddle1.Score += 1
-    elif CollisionType == 2:
-        Paddle2.Score += 1  
-    #elif CollisionType == 3:
-    #    Game.Player1PaddleWav.play()    
-    #elif CollisionType == 4:
-    #    Game.Player2PaddleWav.play()    
-    #elif CollisionType == 5:
-    #    Game.WallWav.play() 
-        
-    return CollisionType
-
-def InitStage(depth, grav, speed):
-    Game.Stage.Gravity = grav
-    Game.Stage.BallSpeed = speed
-    Game.Stage.Depth = depth
-    Game.Stage.Window.Left = 0
-    Game.Stage.Window.Right = ScreenWidth*256 - 1
-    Game.Stage.Window.Top = 0
-    Game.Stage.Window.Bottom = ScreenHeight*256 - 1
-
-    Game.Ball.Pos.X = ScreenWidth/2*256
-    Game.Ball.Pos.Y = ScreenHeight*1/4*256
-    Game.Ball.Pos.Z = Game.Stage.Depth/2
-    Game.Ball.Vel.X = 2*256 #(random.randint(0, 3))-1 * speed
-    Game.Ball.Vel.Y = 2*256 #(random.randint(0, 3))-1 * speed
-    Game.Ball.Vel.Z = speed
-
-def InitPlayerPaddle( w, h ):
-    Game.Paddle1.Score = 0
-    Game.Paddle1.HalfWidth = w
-    Game.Paddle1.HalfHeight = h
-    Game.Paddle1.Pos.X = ScreenWidth*1/4*256
-    Game.Paddle1.Pos.Y = ScreenHeight/2*256
-    Game.Paddle1.Pos.Z = 10*256
-    Game.Paddle1.DefaultZ = Game.Paddle1.Pos.Z
-    Game.Paddle1.TargetZ = Game.Paddle1.Pos.Z
-    Game.Paddle1.ForwardZ = 40*256
-    Game.Paddle1.Delta = ZeroVector3D
-
-    # Clip the paddle position
-    Paddle = Game.Paddle1
-    if ( Paddle.Pos.X < Paddle.HalfWidth ): Paddle.Pos.X = Paddle.HalfWidth
-    if ( Paddle.Pos.Y < Paddle.HalfHeight ): Paddle.Pos.Y = Paddle.HalfHeight
-    if ( Paddle.Pos.X > Game.Stage.Window.Right - Paddle.HalfWidth ): Paddle.Pos.X = Game.Stage.Window.Right - Paddle.HalfWidth
-    if ( Paddle.Pos.Y > Game.Stage.Window.Bottom - Paddle.HalfHeight ): Paddle.Pos.Y = Game.Stage.Window.Bottom - Paddle.HalfHeight
-
-def InitAIPaddle( w, h ):
-    Game.Paddle2.Score = 0
-    Game.Paddle2.HalfWidth = w
-    Game.Paddle2.HalfHeight = h
-    Game.Paddle2.Pos.X = ScreenWidth*3/4*256
-    Game.Paddle2.Pos.Y = ScreenHeight/2*256
-    Game.Paddle2.Pos.Z = Game.Stage.Depth - 10*256
-    Game.Paddle2.DefaultZ = Game.Paddle2.Pos.Z
-    Game.Paddle2.TargetZ = Game.Paddle2.Pos.Z
-    Game.Paddle2.ForwardZ = Game.Stage.Depth - 40*256
-    Game.Paddle2.Delta = ZeroVector3D
-    Game.Paddle2.Vel = ZeroVector3D
-
-    # Clip the paddle position
-    Paddle = Game.Paddle2
-    if ( Paddle.Pos.X < Paddle.HalfWidth ): Paddle.Pos.X = Paddle.HalfWidth
-    if ( Paddle.Pos.Y < Paddle.HalfHeight ): Paddle.Pos.Y = Paddle.HalfHeight
-    if ( Paddle.Pos.X > Game.Stage.Window.Right - Paddle.HalfWidth ): Paddle.Pos.X = Game.Stage.Window.Right - Paddle.HalfWidth
-    if ( Paddle.Pos.Y > Game.Stage.Window.Bottom - Paddle.HalfHeight ): Paddle.Pos.Y = Game.Stage.Window.Bottom - Paddle.HalfHeight
-
-def NextLevel():
-    StageDesc = StageDescs[Game.CurLevel]
-    Game.Stage.Name = StageDesc['Name']
-    Game.Stage.BallSize = 5*256
-    Game.AI.Speed = StageDesc['AISpeed']*256
-    Game.AI.Recenter = StageDesc['AIRecenter']
-    InitStage(StageDesc['StageDepth']*256, StageDesc['StageGravity']*256, StageDesc['BallSpeed']*256)
-    Game.Stage.CrossGravity = StageDesc['StageCrossGravity']*256
-    InitPlayerPaddle(StageDesc['PlayerWidth']*256, StageDesc['PlayerHeight']*256)
-    InitAIPaddle(StageDesc['AIWidth']*256, StageDesc['AIHeight']*256)
-
-def NewGame():
-    Game.CurLevel = 0
-    NextLevel()
-
-def DrawScoreBar(Pos, Score, Color, Player):
-    Game.cairo.set_source_rgb(Color[0]/255.0, Color[1]/255.0, Color[2]/255.0)
-    if Player == 0:
-        for j in range(0, 5):
-            x = Pos[0] + j*30
-            y = Pos[1]
-            Game.cairo.move_to(Game.XPoints[0][0]*20-10+x, Game.XPoints[0][1]*20-10+y)
-            for p in Game.XPoints:
-                Game.cairo.line_to(p[0]*20-10+x, p[1]*20-10+y)
-            Game.cairo.line_to(Game.XPoints[0][0]*20-10+x, Game.XPoints[0][1]*20-10+y)
-            if j >= Score:
-                Game.cairo.stroke()
-            else:
-                Game.cairo.fill()
-    else:
-        for j in range(0, 5):
-            Game.cairo.move_to(Pos[0] + j*30 + 10, Pos[1])
-            Game.cairo.arc(Pos[0] + j*30, Pos[1], 10, 0, 2*math.pi)
-            if j >= Score:
-                Game.cairo.stroke()
-            else:
-                Game.cairo.fill()
-
-def DrawGame():
-    DrawStage( Game.Stage, 1 )
-    DrawPaddle( Game.Paddle1, Game.Stage, 1 )
-    DrawPaddle( Game.Paddle2, Game.Stage, 1 )
-    DrawBall( Game.Ball, Game.Stage, 1 )
-
-    v = 255*Game.Brightness/100.0
-    color = (v, v, v)
-
-    DrawScoreBar((ActualScreenWidth*1/4-75, 30), Game.Paddle1.Score, color, 0)
-    DrawScoreBar((ActualScreenWidth*3/4-75, 30), Game.Paddle2.Score, color, 1)
-
-    #Game.cairo.set_source_rgb(color[0]/255.0, color[1]/255.0, color[2]/255.0)
-    #DrawText(StageDescs[Game.CurLevel]['Name'], -1, 30, 24)
-
-def DrawScoreEffect():
-    RingSpacing = 8*256
-    RingSpeed = 3*256
-    NumRings = 10
-    NumSteps = 20
-    #clock = time.clock()
-    #Game.ScoreWav.play()
-    for step in range(1, NumSteps):
-        Game.cairo.set_source_rgba(0, 0, 0)
-        Game.cairo.rectangle(0, 0, ActualScreenWidth, ActualScreenHeight)
-        Game.cairo.fill()
-        b = 255*(1.0-float(step)/NumSteps)
-        DrawCircle3D(Game.Ball.LastPos.X+Game.Ball.LastVel.X*step/2, Game.Ball.LastPos.Y+Game.Ball.LastVel.Y*step/2, Game.Ball.LastPos.Z+Game.Ball.LastVel.Z*step/2, Game.Stage.BallSize, True, (b,b,b))
-        random.seed(12345678)
-        for ring in range(0, NumRings):
-            b = 255*(1.0-float(step)/NumSteps)*(0.5+0.5*math.cos(math.pi*float(ring)/NumRings))
-            DrawCircle3D(Game.Ball.LastPos.X+Game.Ball.LastVel.X*ring, Game.Ball.LastPos.Y+Game.Ball.LastVel.Y*ring, Game.Ball.LastPos.Z+Game.Ball.LastVel.Z*ring, (-ring+1)*RingSpacing + RingSpeed*step, True, (b, b, b))
-        DrawGame()
-        time.sleep(0.01)
-        #pygame.display.flip()
-        #clock.tick(20)
-
-def SequenceIntro():
-    if (Game.Timer1 == 0):
-        Game.Brightness = 0
-        Game.Timer0 += 1
-        if (Game.Timer0 >= 100):
-            Game.Timer1 = 1
-    elif (Game.Timer1 == 1):
-        if (Game.Brightness < 100): Game.Brightness += 1
-        Game.Timer0 -= 2
-        if (Game.Timer0 <= 0):
-            #Game.IntroWav.play()
-            Game.Sequence = 2
-            Game.Timer0 = 0
-            Game.Timer1 = 0
-        DrawGame()
-    Game.cairo.set_source_rgb(Game.Timer0/100.0, Game.Timer0/100.0, Game.Timer0/100.0)
-    DrawText("3 d   p o n g", -1, -1, 100)
-
-def SequenceNewStage():
-    DrawGame()
-    if (Game.Timer1 == 0):
-        if (Game.Brightness > 0): Game.Brightness -= 5
-        Game.Timer0 += 2
-        if (Game.Timer0 >= 100):
-            Game.Timer1 = 1
-            NextLevel()
-    elif (Game.Timer1 == 1):
-        if (Game.Brightness < 100): Game.Brightness += 1
-        Game.Timer0 -= 2
-        if (Game.Timer0 <= 0):
-            #Game.IntroWav.play()
-            Game.Sequence = 2
-            Game.Timer0 = 0
-            Game.Timer1 = 0
-    Game.cairo.set_source_rgb(Game.Timer0/100.0, Game.Timer0/100.0, Game.Timer0/100.0)
-    DrawText(StageDescs[Game.CurLevel]['Name'], -1, -1, 100)
-
-def SequenceBallRelease():
-    if (Game.Brightness < 100): Game.Brightness += 1
-    DrawGame()
-    v = math.sin(3.14159*Game.Timer0/30.0)
-    Game.Timer0 += 1
-    if (Game.Timer0 > 25):
-        Game.Timer1 += 1
-        Game.Timer0 = 0
-    if (Game.Timer1 >= 3):
-        Game.Sequence = 3
-        Game.EndTimeout = 0
-    Game.cairo.set_source_rgb(v, v, v)
-    DrawText(str(3-Game.Timer1), -1, -1, 20)
-
-def SequencePlay():
-    DrawGame()
+                time_left -= first_collision_cur_time
+                collision_type = first_collision_type
+            if ( not (first_collision_cur_time != -1 and time_left > 0) ):
+                break
     
-    # Process player input and AI.
-    UpdatePaddleFromPen( Game.Paddle1, Game.Stage )
-    UpdatePaddleAI( Game.Paddle2, Game.Ball, Game.Stage )
+        # If there's time left in the frame w/o collision, finish it up.    
+        if time_left > 0:
+            self.pos.x += self.vel.x * time_left / time_res
+            self.pos.y += self.vel.y * time_left / time_res
+            self.pos.z += self.vel.z * time_left / time_res
     
-    # Run the ball simulation.
-    Game.LastScore = UpdateBall( Game.Ball, Game.Paddle1, Game.Paddle2, Game.Stage )
-    if ( Game.LastScore == 1 ):
-        DrawScoreEffect()
-    if ( Game.LastScore == 2 ):
-        DrawScoreEffect()
+        # Apply gravity.
+        self.vel.y += game.stage.gravity
+        if ( self.pos.y + game.stage.ballsize + 20 > stage.window.bottom and math.fabs(self.vel.y) == 0 ):
+            self.vel.y -= 6
+        self.vel.x += game.stage.crossgravity
+    
+        # Calculate scores if any collisions with the back wall happened.
+        if collision_type == 1:
+            paddle1.score += 1
+        elif collision_type == 2:
+            paddle2.score += 1  
+        #elif collision_type == 3:
+        #    game.Player1PaddleWav.play()    
+        #elif collision_type == 4:
+        #    game.Player2PaddleWav.play()    
+        #elif collision_type == 5:
+        #    game.WallWav.play() 
+
+        return collision_type
+
+class Paddle:
+    def __init__(self):
+        # Center of the paddle
+        self.pos = Vector()
         
-    # Check for end of game conditions.
-    if ( Game.Paddle1.Score == 5 or Game.Paddle2.Score == 5 ):
-        Game.EndTimeout += 1
-    if ( Game.EndTimeout >= 5 ):
-        StageDescs[Game.CurLevel]['PlayerScore'] = Game.Paddle1.Score
-        StageDescs[Game.CurLevel]['AIScore'] = Game.Paddle2.Score
-        if ( Game.Paddle2.Score == 5 ):
-            Game.Sequence = 4
-            Game.Timer0 = 0
-            Game.Timer1 = 0
-        if ( Game.Paddle1.Score == 5 ):
-            Game.CurLevel += 1
-            if (Game.CurLevel == len(StageDescs)):
-                Game.Timer0 = 0
-                Game.Timer1 = 0
-                Game.Sequence = 5
-            else:
-                Game.Timer0 = 0
-                Game.Timer1 = 0
-                Game.Sequence = 1
+        # Physics stuff
+        self.delta = Vector() # Amount moved since last update for spin calc.
+        self.halfwidth = 0
+        self.halfheight = 0
 
-def SequenceGameOver():
-    DrawGame()
-    Game.cairo.set_source_rgb(Game.Timer0/100, Game.Timer0/100, Game.Timer0/100)
-    DrawText("; - {", -1, -1, 24)
-    if (Game.Timer1 == 0):
-        if (Game.Brightness > 0): Game.Brightness -= 5
-        Game.Timer0 += 2
-        if (Game.Timer0 >= 100):
-            Game.Timer1 = 1
-            NewGame()
-    elif (Game.Timer1 == 1):
-        Game.Timer0 -= 2
-        if (Game.Timer0 <= 0):
-            Game.Sequence = 0
-            Game.Timer0 = 0
-            Game.Timer1 = 0
+        # Stuff for moving the paddle forward.
+        self.targetz = 0
+        self.defaultz = 0
+        self.forwardz = 0
 
-def SequenceYouWin():
-    StartY = 250
-    TotalScore = 0
-    for i in range(0, len(StageDescs)):
-        v = clamp(255*Game.Timer0/60.0 - i*60, 0, 255)
-        color = (v, v, v)
+        # AI stuff
+        self.vel = Vector()
+        self.speed = 0
 
-        PlayerScore = StageDescs[i]['PlayerScore']
-        AIScore = StageDescs[i]['AIScore']
-        DiffScore = PlayerScore - AIScore
+        # Game stuff
+        self.score = 0
 
-        DrawScoreBar((250, StartY + i*50), PlayerScore, color, 0)
-        DrawText('-', 475, StartY + i*50, 20)
-        DrawScoreBar((550, StartY + i*50), AIScore, color, 1)
-        DrawText('=', 775, StartY + i*50, 20)
-        DrawScoreBar((850, StartY + i*50), DiffScore, color, 0)
+    def draw (self, stage):
+        begin_prim(PRIM_LINE)
+    
+        r = Rect()
+        r.left = self.pos.x - self.halfwidth 
+        r.right = self.pos.x + self.halfwidth    
+        r.top = self.pos.y - self.halfheight 
+        r.bottom = self.pos.y + self.halfheight  
+        
+        rect3d( r, self.pos.z )
+    
+        x = r.left + ( ( r.right - r.left ) / 2 )
+        line3d( x, r.bottom, self.pos.z, x, stage.window.bottom, self.pos.z )
 
-        DrawText(StageDescs[i]['Name'], 125, StartY + i*50, 24)
+    def clip_position (self):
+        self.pos.x = max(self.pos.x, self.halfwidth)
+        self.pos.y = max(self.pos.y, self.halfheight)
+        self.pos.x = min(self.pos.x, game.stage.window.right - self.halfwidth)
+        self.pos.y = min(self.pos.y, game.stage.window.bottom - self.halfheight)
 
-        TotalScore += DiffScore
+    def setup_player(self, w, h):
+        self.halfwidth = w
+        self.halfheight = h
 
-    Game.cairo.move_to(250, StartY + len(StageDescs)*50)
-    Game.cairo.line_to(950, StartY + len(StageDescs)*50)
-    Game.cairo.stroke()
-    x = 250
-    y = StartY + (len(StageDescs)+1)*50
-    for j in range(0, 5*len(StageDescs)):
-        Game.cairo.move_to(Game.XPoints[0][0]*20-10+x, Game.XPoints[0][1]*20-10+y)
-        for p in Game.XPoints:
-            Game.cairo.line_to(p[0]*20-10+x, p[1]*20-10+y)
-        Game.cairo.line_to(Game.XPoints[0][0]*20-10+x, Game.XPoints[0][1]*20-10+y)
-        if j >= TotalScore:
-            Game.cairo.stroke()
+        self.delta = zerovec
+        self.pos = Vector(to_fixed(25), to_fixed(50), to_fixed(10))
+        self.clip_position()
+
+        self.defaultz = self.pos.z
+        self.targetz = self.pos.z
+        self.forwardz = to_fixed(40)
+
+        self.score = 0
+
+    def update_player (self, stage):
+        """Check paddle inputs and apply to paddle."""
+        lastpos = Vector()
+        lastpos.x = self.pos.x
+        lastpos.y = self.pos.y
+        lastpos.z = self.pos.z
+    
+        penx = game.mousex*100/actual_screen_width
+        peny = game.mousey*100/actual_screen_height
+        pendown = 1
+    
+        if ( game.mousedown ):
+            self.targetz = self.forwardz
         else:
-            Game.cairo.fill()
-        x += 30
-        if (x > 980):
-            x = 250
-            y += 50
+            self.targetz = self.defaultz
+    
+        # Snaps forward, eases back.
+        if ( self.pos.z < self.targetz ):
+            if ( self.delta.z < to_fixed(4) ):
+                self.delta.z = to_fixed(6)
+            self.pos.z += self.delta.z + to_fixed(2)
+            if ( self.pos.z > self.targetz ):
+                self.pos.z = self.targetz
+    
+        if ( self.pos.z > self.targetz ):
+            self.pos.z += ( self.targetz - self.pos.z ) / 4
+    
+        # Get the 2d position from the pen.
+        if ( pendown ): 
+            self.pos.x = to_fixed(penx)
+            self.pos.y = to_fixed(peny)
+            self.clip_position()
+    
+        self.delta.x = self.pos.x - lastpos.x
+        self.delta.y = self.pos.y - lastpos.y
+        self.delta.z = self.pos.z - lastpos.z
 
-    text = "; - |"
-    if (TotalScore >= 5*len(StageDescs)):
-        text = "; - D"
-    elif (TotalScore >= 4*len(StageDescs)):
-        text = "; - >"
-    elif (TotalScore >= 3*len(StageDescs)):
-        text = "; - )"
-    elif (TotalScore >= 2*len(StageDescs)):
-        text = "; - }"
-    DrawText(text, -1, 150, 24)
+    def setup_ai (self, w, h):
+        self.score = 0
 
-    if (Game.Timer1 == 0):
-        if (Game.Brightness > 0): Game.Brightness -= 5
-        if (Game.Brightness <= 0):
-            Game.Timer0 = 0
-            Game.Timer1 = 1
-        DrawGame()
-    elif (Game.Timer1 == 1):
-        Game.Timer0 += 1                
-        if (Game.Timer0 >= 1000 or Game.MouseDown):
-            Game.Timer1 = 2
-            Game.Timer0 = len(StageDescs)*30
-    elif (Game.Timer1 == 2):
-        Game.Timer0 -= 1
-        if (Game.Timer0 <= 0):
-            NewGame()
-            Game.Sequence = 0
-            Game.Timer0 = 0
-            Game.Timer1 = 0
+        self.halfwidth = w
+        self.halfheight = h
 
-class Pong3D(activity.Activity):
+        self.pos = Vector(to_fixed(75), to_fixed(50), game.stage.depth - to_fixed(10))
+
+        self.defaultz = self.pos.z
+        self.targetz = self.pos.z
+        self.forwardz = game.stage.depth - 40*256
+
+        self.delta = zerovec
+        self.vel = zerovec
+
+        self.clip_position()
+    
+    def update_ai (self, ball, stage):
+        """Compute AI and move paddle."""
+        # Only move when the ball is coming back, that way it appears to react to the players hit.
+        # Actually, start moving just before the player hits it.
+        if ( ball.vel.z > 0 or ball.vel.z < 0 and ball.pos.z < to_fixed(30)) :
+            # Acceleration towards the ball.
+            if ( math.fabs( ( self.pos.x - ball.pos.x ) ) > to_fixed(5) ):
+                if ( self.pos.x < ball.pos.x ):
+                    self.vel.x += to_fixed(4)
+                if ( self.pos.x > ball.pos.x ):
+                    self.vel.x -= to_fixed(4)
+                
+            if ( math.fabs( ( self.pos.y - ball.pos.y ) ) > to_fixed(5) ):
+                if ( self.pos.y < ball.pos.y ):
+                    self.vel.y += to_fixed(4)
+                if ( self.pos.y > ball.pos.y ): 
+                    self.vel.y -= to_fixed(4)
+            
+            # Speed clamping
+            self.vel.x = clamp( self.vel.x, -game.ai.speed, game.ai.speed )
+            self.vel.y = clamp( self.vel.y, -game.ai.speed, game.ai.speed )
+        elif ( ball.pos.z < game.stage.depth/2 ):
+            self.vel.x = 0
+            self.vel.y = 0
+            # Drift towards the center.
+            if ( game.ai.recenter ):
+                self.pos.x += ( to_fixed(50) - self.pos.x ) / 4
+                self.pos.y += ( to_fixed(50) - self.pos.y ) / 4
+                
+        # Friction
+        if ( self.vel.x > 0 ):
+            self.vel.x -= 1
+        if ( self.vel.x < 0 ):
+            self.vel.x += 1
+            
+        if ( self.vel.y > 0 ):
+            self.vel.y -= 1
+        if ( self.vel.y < 0 ):
+            self.vel.y += 1
+            
+        self.pos.x += self.vel.x
+        self.pos.y += self.vel.y
+        self.clip_position()
+
+class Stage:
+    def __init__(self):
+        # How long the stage is from near side to far side.
+        self.depth = 0
+        self.window = Rect()
+
+        self.gravity = 0
+        self.crossgravity = 0
+        self.ballspeed = 0
+        self.ballsize = 0
+
+    def draw (self):
+        window = self.window
+    
+        begin_prim(PRIM_LINE)
+        v = 255*game.brightness/100.0
+        set_color(Color(v,v,v))
+    
+        # Near and far rectangles   
+        rect3d( window, 0 )
+        rect3d( window, self.depth )
+    
+        # Diagonals
+        line3d( window.left, window.top, 1, window.left, window.top, self.depth )
+        line3d( window.left, window.bottom, 1, window.left, window.bottom, self.depth )
+        line3d( window.right, window.top, 1, window.right, window.top, self.depth )
+        line3d( window.right, window.bottom, 1, window.right, window.bottom, self.depth )
+
+        # Wall grids.
+        set_color(Color(64, 64, 64))
+    
+        i = 1
+        while i < 5:
+            x = i*(window.right-window.left)/5
+            i += 1
+            line3d(x, window.top, 1, x, window.top, self.depth)
+            line3d(x, window.bottom, 1, x, window.bottom, self.depth)
+    
+        i = 1
+        while i < 5:
+            x = i*(window.bottom-window.top)/5
+            i += 1
+            line3d(window.left, x, 1, window.left, x, self.depth)
+            line3d(window.right, x, 1, window.right, x, self.depth)
+            
+        i = 1
+        while i < 5:
+            x = i*(self.depth)/5
+            i += 1
+            line3d(window.left, window.top, x, window.right, window.top, x)
+            line3d(window.left, window.bottom, x, window.right, window.bottom, x)
+            line3d(window.left, window.top, x, window.left, window.bottom, x)
+            line3d(window.right, window.top, x, window.right, window.bottom, x)
+
+        v = 255*game.brightness/100.0
+        set_color(Color(v,v,v))
+
+    def setup(self, depth, grav, speed):
+        self.gravity = grav
+        self.ballspeed = speed
+        self.depth = depth
+        self.window.left = 0
+        self.window.right = to_fixed(99)
+        self.window.top = 0
+        self.window.bottom = to_fixed(99)
+
+class AI:
+    def __init__(self):
+        self.speed = 0
+        self.recenter = False
+
+class IntroSequence:
+    def enter (self):
+        self.timer0 = 0
+        self.timer1 = 0
+
+    def leave (self):
+        pass
+
+    def draw (self):
+        if (self.timer1 == 1):
+            game.draw()
+        set_color(Color(self.timer0/100.0*255.0, self.timer0/100.0*255.0, self.timer0/100.0*255.0))
+        draw_text(_("3 d   p o n g"), -1, -1, 100)
+
+    def update (self):
+        if (self.timer1 == 0):
+            game.brightness = 0
+            self.timer0 += 1
+            if (self.timer0 >= 100):
+                self.timer1 = 1
+        elif (self.timer1 == 1):
+            if (game.brightness < 100): game.brightness += 1
+            self.timer0 -= 2
+            if (self.timer0 <= 0):
+                #game.IntroWav.play()
+                game.set_sequence(BallReleaseSequence())
+
+class NewStageSequence:
+    def enter (self):
+        self.timer0 = 0
+        self.timer1 = 0
+
+    def leave (self):
+        pass
+
+    def draw (self):
+        game.draw()
+        set_color(Color(self.timer0/100.0*255.0, self.timer0/100.0*255.0, self.timer0/100.0*255.0))
+        draw_text(stage_descs[game.curlevel]['Name'], -1, -1, 100)
+
+    def update (self):
+        if (self.timer1 == 0):
+            if (game.brightness > 0): game.brightness -= 5
+            self.timer0 += 2
+            if (self.timer0 >= 100):
+                self.timer1 = 1
+                game.next_level()
+        elif (self.timer1 == 1):
+            if (game.brightness < 100): game.brightness += 1
+            self.timer0 -= 2
+            if (self.timer0 <= 0):
+                #game.IntroWav.play()
+                game.set_sequence(BallReleaseSequence())
+
+class BallReleaseSequence:
+    def enter (self):
+        self.timer0 = 0
+        self.timer1 = 0
+
+    def leave (self):
+        pass
+
+    def draw (self):
+        game.draw()
+        v = math.sin(3.14159*self.timer0/30.0)
+        set_color(Color(v*255.0, v*255.0, v*255.0))
+        draw_text(str(3-self.timer1), -1, -1, 20)
+
+    def update (self):
+        if (game.brightness < 100): game.brightness += 1
+        self.timer0 += 1
+        if (self.timer0 > 25):
+            self.timer1 += 1
+            self.timer0 = 0
+        if (self.timer1 >= 3):
+            game.set_sequence(PlaySequence())
+
+class PlaySequence:
+    def enter (self):
+        self.timer0 = 0
+        self.timer1 = 0
+        self.endtimeout = 0
+
+    def leave (self):
+        pass
+
+    def draw (self):
+        game.draw()
+
+    def update (self):
+        # Process player input and AI.
+        game.paddle1.update_player(game.stage)
+        game.paddle2.update_ai(game.ball, game.stage)
+        
+        # Run the ball simulation.
+        game.lastscore = game.ball.update(game.paddle1, game.paddle2, game.stage)
+        if ( game.lastscore == 1 ):
+            game.set_sequence(ScoreSequence())
+        if ( game.lastscore == 2 ):
+            game.set_sequence(ScoreSequence())
+            
+        # Check for end of game conditions.
+        if ( game.paddle1.score == 5 or game.paddle2.score == 5 ):
+            self.endtimeout += 1
+        if ( self.endtimeout >= 5 ):
+            stage_descs[game.curlevel]['PlayerScore'] = game.paddle1.score
+            stage_descs[game.curlevel]['AIScore'] = game.paddle2.score
+            if ( game.paddle2.score == 5 ):
+                game.set_sequence(LoseSequence())
+            if ( game.paddle1.score == 5 ):
+                game.curlevel += 1
+                if (game.curlevel == len(stage_descs)):
+                    game.set_sequence(WinSequence())
+                else:
+                    game.set_sequence(NewStageSequence())
+
+class ScoreSequence:
+    def enter (self):
+        self.step = 0
+        self.num_steps = 20
+        #game.scoreWav.play()
+
+    def leave (self):
+        #game.ball.vel = Vector(to_fixed(2), to_fixed(2), game.ball.vel.z)
+        pass
+
+    def draw (self):
+        game.draw()
+
+        ring_spacing = to_fixed(1)
+        ring_speed = to_fixed(1)
+        num_rings = 10
+
+        b = 255*(1.0-float(self.step)/self.num_steps)
+        set_color(Color(b,b,b))
+
+        begin_prim(PRIM_LINE)
+        circle3d(game.ball.lastpos.x+game.ball.lastvel.x*self.step/2, game.ball.lastpos.y+game.ball.lastvel.y*self.step/2, game.ball.lastpos.z+game.ball.lastvel.z*self.step/2, game.stage.ballsize)
+        random.seed(12345678)
+        for ring in range(0, num_rings):
+            b = 255*(1.0-float(self.step)/self.num_steps)*(0.5+0.5*math.cos(math.pi*float(ring)/num_rings))
+            circle3d(game.ball.lastpos.x+game.ball.lastvel.x*ring, game.ball.lastpos.y+game.ball.lastvel.y*ring, game.ball.lastpos.z+game.ball.lastvel.z*ring, (-ring+1)*ring_spacing + ring_speed*self.step)
+
+    def update (self):
+        self.step += 1
+        if self.step >= self.num_steps:
+            game.set_sequence(PlaySequence())
+
+class LoseSequence:
+    def enter (self):
+        self.timer0 = 0
+        self.timer1 = 0
+
+    def leave (self):
+        pass
+
+    def draw (self):
+        game.draw()
+        set_color(Color(self.timer0/100.0, self.timer0/100.0, self.timer0/100.0))
+        draw_text("; - {", -1, -1, 24)
+
+    def update (self):
+        if (self.timer1 == 0):
+            if (game.brightness > 0): game.brightness -= 5
+            self.timer0 += 2
+            if (self.timer0 >= 100):
+                self.timer1 = 1
+                game.new_game()
+        elif (self.timer1 == 1):
+            self.timer0 -= 2
+            if (self.timer0 <= 0):
+                game.set_sequence(IntroSequence())
+                self.timer0 = 0
+                self.timer1 = 0
+
+class WinSequence:
+    def enter (self):
+        self.timer0 = 0
+        self.timer1 = 0
+
+    def leave (self):
+        pass
+
+    def update (self):
+        if (self.timer1 == 0):
+            if (game.brightness > 0): game.brightness -= 5
+            if (game.brightness <= 0):
+                self.timer0 = 0
+                self.timer1 = 1
+            DrawGame()
+        elif (self.timer1 == 1):
+            self.timer0 += 1                
+            if (self.timer0 >= 1000 or game.mousedown):
+                self.timer1 = 2
+                self.timer0 = len(stage_descs)*30
+        elif (self.timer1 == 2):
+            self.timer0 -= 1
+            if (self.timer0 <= 0):
+                game.new_game()
+                game.set_sequence(IntroSequence())
+                self.timer0 = 0
+                self.timer1 = 0
+
+    def draw (self):
+        starty = 250
+        total_score = 0
+        for i in range(0, len(stage_descs)):
+            v = clamp(255*self.timer0/60.0 - i*60, 0, 255)
+            set_color(Color(v,v,v))
+
+            player_score = stage_descs[i]['player_score']
+            ai_score = stage_descs[i]['ai_score']
+            diff_score = player_score - ai_score
+
+            game.draw_score(250, starty + i*50, player_score, 0)
+            draw_text('-', 475, starty + i*50, 20)
+            game.draw_score(550, starty + i*50, ai_score, 1)
+            draw_text('=', 775, starty + i*50, 20)
+            game.draw_score(850, starty + i*50, diff_score, 0)
+
+            draw_text(stage_descs[i]['Name'], 125, starty + i*50, 24)
+
+            total_score += diff_score
+    
+        game.cairo.move_to(250, starty + len(stage_descs)*50)
+        game.cairo.line_to(950, starty + len(stage_descs)*50)
+        game.cairo.stroke()
+        x = 250
+        y = starty + (len(stage_descs)+1)*50
+        for j in range(0, 5*len(stage_descs)):
+            game.cairo.move_to(game.xpoints[0][0]*20-10+x, game.xpoints[0][1]*20-10+y)
+            for p in game.xpoints:
+                game.cairo.line_to(p[0]*20-10+x, p[1]*20-10+y)
+            game.cairo.line_to(game.xpoints[0][0]*20-10+x, game.xpoints[0][1]*20-10+y)
+            if j >= total_score:
+                game.cairo.stroke()
+            else:
+                game.cairo.fill()
+            x += 30
+            if (x > 980):
+                x = 250
+                y += 50
+    
+        text = "; - |"
+        if (total_score >= 5*len(stage_descs)):
+            text = "; - D"
+        elif (total_score >= 4*len(stage_descs)):
+            text = "; - >"
+        elif (total_score >= 3*len(stage_descs)):
+            text = "; - )"
+        elif (total_score >= 2*len(stage_descs)):
+            text = "; - }"
+        draw_text(text, -1, 150, 24)
+
+class Game:
+    def __init__(self):
+        self.endtimeout = 0
+
+        self.ai = AI()
+
+        self.stage = Stage()
+        self.ball = Ball()
+        self.paddle1 = Paddle()
+        self.paddle2 = Paddle()
+        
+        # Score variable from last frame, to see if we need to erase the scoring graphic.
+        self.lastscore = 0
+        
+        # Current stage.
+        self.curlevel = 0
+
+        # Variables affecting the sequencer.
+        self.sequence = IntroSequence()
+        self.sequence.enter()
+        self.brightness = 100
+        
+        # Current mouse state.
+        self.mousex = 0
+        self.mousey = 0
+        self.mousedown = 0
+
+        # The 'X' shape used as an icon.
+        self.xpoints = [ (0,0), (0.3,0), (0.5,0.3), (0.7,0), (1,0), (0.7,0.5), (1,1), (0.7,1), (0.5,0.6), (0.3,1), (0,1), (0.3,0.5) ]
+
+    def set_sequence (self, seq):
+        self.sequence.leave()
+        self.sequence = seq
+        self.sequence.enter()
+
+    def next_level(self):
+        desc = stage_descs[self.curlevel]
+
+        self.stage.name = desc['Name']
+
+        self.stage.ballsize = to_fixed(desc['BallSize'])
+        self.ball.setup(to_fixed(desc['BallSpeed']))
+
+        self.stage.setup(to_fixed(desc['StageDepth']), to_fixed(desc['StageGravity']), to_fixed(desc['BallSpeed']))
+        self.stage.crossgravity = to_fixed(desc['StageCrossGravity'])
+
+        self.ai.speed = desc['AISpeed']*256
+        self.ai.recenter = desc['AIRecenter']
+
+        self.paddle1.setup_player(to_fixed(desc['PaddleWidth']), to_fixed(desc['PaddleHeight']))
+        self.paddle2.setup_ai(to_fixed(desc['PaddleWidth']), to_fixed(desc['PaddleHeight']))
+    
+    def new_game(self):
+        self.curlevel = 0
+        self.next_level()
+    
+    def draw_score(self, x, y, score, player):
+        for j in range(0, 5):
+            if j < score:
+                begin_prim(PRIM_FILL)
+            else:
+                begin_prim(PRIM_LINE)
+
+            px = x + j*30
+            py = y
+
+            if player == 1:
+                game.cairo.move_to(game.xpoints[0][0]*20-10+px, game.xpoints[0][1]*20-10+py)
+                for p in game.xpoints:
+                    game.cairo.line_to(p[0]*20-10+px, p[1]*20-10+py)
+                game.cairo.line_to(game.xpoints[0][0]*20-10+px, game.xpoints[0][1]*20-10+py)
+            elif player == 2:
+                game.cairo.move_to(px + 10, py)
+                game.cairo.arc(px, py, 10, 0, 2*math.pi)
+
+    def draw(self):
+        v = 255*self.brightness/100.0
+        set_color(Color(v,v,v))
+
+        self.stage.draw()
+        self.paddle1.draw(self.stage)
+        self.paddle2.draw(self.stage)
+        self.ball.draw(self.stage)
+    
+        v = 255*self.brightness/100.0
+        set_color(Color(v,v,v))
+        self.draw_score(actual_screen_width*1/4-75, 30, self.paddle1.score, 1)
+        self.draw_score(actual_screen_width*3/4-75, 30, self.paddle2.score, 2)
+    
+        #game.cairo.set_source_rgb(color[0]/255.0, color[1]/255.0, color[2]/255.0)
+        #draw_text(stage_descs[game.curlevel]['Name'], -1, 30, 24)
+
+# Global game instance.
+game = Game()
+
+class PongActivity(activity.Activity):
 
     def __init__ (self, handle):
         activity.Activity.__init__(self, handle)
@@ -863,100 +926,196 @@ class Pong3D(activity.Activity):
         self.width = gtk.gdk.screen_width()
         self.height = gtk.gdk.screen_height()
 
-        global ActualScreenWidth
-        global ActualScreenHeight
-        ActualScreenWidth = self.width
-        ActualScreenHeight = self.height
+        # Build the toolbar.
+        self.build_toolbar()
 
-        # Set up the drawing window.
-        self.drawarea = gtk.DrawingArea()
-        self.drawarea.set_size_request(self.width, self.height)
-        self.drawarea.connect('destroy', self.on_destroy)
-        self.drawarea.add_events(gtk.gdk.POINTER_MOTION_MASK|gtk.gdk.BUTTON_PRESS_MASK|gtk.gdk.BUTTON_RELEASE_MASK)
-        self.drawarea.connect('motion-notify-event', self.on_mouse)
-        self.drawarea.connect('button-press-event', self.on_mouse)
-        self.drawarea.connect('button-release-event', self.on_mouse)
-        self.drawarea.grab_add()
-        self.drawarea.cursor_initialized = False
+        # Set up the drawing window and context.
+        self.build_drawarea()
+        self.build_cairo()
 
+        # Build the level editor.
+        self.build_editor()
+
+        # Turn off double buffering.
         self.set_double_buffered(False)
         self.drawarea.set_double_buffered(True)
 
-        # Set up the drawing.
-        self.set_canvas(self.drawarea)
-        self.show_all()
-
         # Initialize the game.
-        NewGame()
+        game.new_game()
+        self.paused = False
 
         # Get the mainloop ready to run.
         gobject.timeout_add(50, self.mainloop)
 
+        # Show everything.
+        self.show_all()
+
+    def build_drawarea (self):
+        self.drawarea = gtk.Layout()
+        self.drawarea.set_size_request(self.width, self.height)
+
+        self.drawarea.connect('destroy', self.on_destroy)
+
+        self.drawarea.add_events(gtk.gdk.POINTER_MOTION_MASK|gtk.gdk.BUTTON_PRESS_MASK|gtk.gdk.BUTTON_RELEASE_MASK)
+        self.drawarea.connect('motion-notify-event', self.on_mouse)
+        self.drawarea.connect('button-press-event', self.on_mouse)
+        self.drawarea.connect('button-release-event', self.on_mouse)
+
+        #self.drawarea.grab_add()
+        self.cursor_visible = True
+
+        self.set_canvas(self.drawarea)
+
+    def build_cairo (self):
+        game.cairosurf = cairo.ImageSurface(cairo.FORMAT_RGB24, self.width, self.height)
+        game.cairo = cairo.Context(game.cairosurf)
+        game.cairo.set_antialias(cairo.ANTIALIAS_NONE)
+        #game.cairo.set_line_cap(cairo.LINE_CAP_BUTT)
+        #game.cairo.set_line_width(1.0)
+
+    def build_toolbar (self):
+        self.editorbtn = gtk.ToggleToolButton()
+        self.editorbtn.set_icon_name('media-playback-start')
+        self.editorbtn.connect('clicked', self.on_toggle_editor)
+
+        gamebox = gtk.Toolbar()
+        gamebox.insert(self.editorbtn, -1)
+
+        toolbar = activity.ActivityToolbox(self)
+        toolbar.add_toolbar(_("Game"), gamebox)
+        toolbar.show_all()
+        self.set_toolbox(toolbar)
+
+    def build_editor (self):
+        self.editor = gtk.VBox()
+        self.editor.set_size_request(800, 600)
+        self.editor.set_property("spacing", 20)
+
+        #  { 'Name': _('normal'), 'AISpeed': 1, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSize': 1, 'BallSpeed': 3, 'PaddleWidth': 20, 'PaddleHeight': 20 },
+
+        # Brush size scrollbar, label and pressure sensitivity checkbox.
+        box = gtk.HBox()
+        box.pack_end(gtk.Label(_('Name')), False)
+        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
+        self.editor.pack_start(box, False)
+
+        box = gtk.HBox()
+        box.pack_end(gtk.Label(_('AI Speed')), False)
+        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
+        self.editor.pack_start(box, False)
+
+        box = gtk.HBox()
+        box.pack_end(gtk.Label(_('Stage Depth')), False)
+        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
+        self.editor.pack_start(box, False)
+
+        box = gtk.HBox()
+        box.pack_end(gtk.Label(_('Gravity')), False)
+        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
+        self.editor.pack_start(box, False)
+
+        box = gtk.HBox()
+        box.pack_end(gtk.Label(_('Cross Gravity')), False)
+        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
+        self.editor.pack_start(box, False)
+
+        box = gtk.HBox()
+        box.pack_end(gtk.Label(_('Ball Size')), False)
+        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
+        self.editor.pack_start(box, False)
+
+        box = gtk.HBox()
+        box.pack_end(gtk.Label(_('Ball Speed')), False)
+        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
+        self.editor.pack_start(box, False)
+
+        box = gtk.HBox()
+        box.pack_end(gtk.Label(_('Paddle Width')), False)
+        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
+        self.editor.pack_start(box, False)
+
+        box = gtk.HBox()
+        box.pack_end(gtk.Label(_('Paddle Height')), False)
+        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
+        self.editor.pack_start(box, False)
+
+        self.drawarea.put(self.editor, 25, 100)
+
+    def on_toggle_editor (self, button):
+        if button.get_active():
+            self.paused = True
+            self.editor.show()
+            self.queue_draw()
+            self.show_cursor(True)
+        else:
+            self.paused = False
+            self.editor.hide()
+            self.queue_draw()
+            self.show_cursor(False)
+
+    def show_cursor (self, show):
+        if self.cursor_visible and not show:
+            pixmap = gtk.gdk.Pixmap(None, 1, 1, 1)
+            color = gtk.gdk.Color()
+            cursor = gtk.gdk.Cursor(pixmap, pixmap, color, color, 0, 0)
+            self.drawarea.bin_window.set_cursor(cursor)
+        if not self.cursor_visible and show:
+            self.drawarea.bin_window.set_cursor(None)
+        self.cursor_visible = show
+
+    def on_mouse (self, widget, event):
+        game.mousex = int(event.x)
+        game.mousey = int(event.y)
+        if event.type == gtk.gdk.BUTTON_PRESS:
+            # Simple cheat for testing.
+            #if (game.paddle1.score < 5):
+            #    game.paddle1.score += 1
+            game.mousedown = 1
+        if event.type == gtk.gdk.BUTTON_RELEASE:
+            game.mousedown = 0
+
+    def on_destroy (self, widget):
+        self.running = False
+
+    def tick (self):
+        if self.paused:
+            return True
+        if not self.drawarea.bin_window:
+            return True
+
+        # Clear mouse cursor
+        self.show_cursor(False)
+
+        global actual_screen_width
+        global actual_screen_height
+        actual_screen_width = self.drawarea.get_allocation()[2]
+        actual_screen_height = self.drawarea.get_allocation()[3]
+
+        # Clear the offscreen surface.
+        game.cairo.set_source_rgba(0, 0, 0)
+        game.cairo.rectangle(0, 0, self.width, self.height)
+        game.cairo.fill()
+
+        # Update current game sequence and render into offscreen surface.
+        game.sequence.update()
+        game.sequence.draw()
+
+        flush_prim()
+
+        # Draw offscreen surface to screen.
+        ctx = self.drawarea.bin_window.cairo_create()
+        ctx.set_source_surface(game.cairosurf, 0, 0)
+        ctx.rectangle(0, 0, self.width, self.height)
+        ctx.fill()
+
+        return True
+
     def mainloop (self):
-        # Start the game loop.  Note that __init__ doesn't actually return until the activity ends.  
-        # A bit extreme, but it's the only way to take over the GTK event loop from an Activity.
+        """Runs the game loop.  Note that this doesn't actually return until the activity ends."""
         self.running = True
         while self.running:
             self.tick()
             while gtk.events_pending():
                 gtk.main_iteration(False)
         return False
-
-    def on_mouse (self, widget, event):
-        Game.MouseX = int(event.x)
-        Game.MouseY = int(event.y)
-        if event.type == gtk.gdk.BUTTON_PRESS:
-            #if (Game.Paddle1.Score < 5):
-            #    Game.Paddle1.Score += 1
-            Game.MouseDown = 1
-        if event.type == gtk.gdk.BUTTON_RELEASE:
-            Game.MouseDown = 0
-
-    def on_destroy (self, widget):
-        self.running = False
-
-    def tick (self):
-        # Clear mouse cursor
-        if not self.drawarea.window:
-            return True
-        if not self.drawarea.cursor_initialized:
-            self.drawarea.cursor_initialized = True
-            pixmap = gtk.gdk.Pixmap(None, 1, 1, 1)
-            color = gtk.gdk.Color()
-            cursor = gtk.gdk.Cursor(pixmap, pixmap, color, color, 0, 0)
-            self.drawarea.window.set_cursor(cursor)
-
-        self.drawareactx = self.drawarea.window.cairo_create()
-
-        Game.cairosurf = cairo.ImageSurface(cairo.FORMAT_RGB24, self.width, self.height)
-        Game.cairo = cairo.Context(Game.cairosurf)
-
-        Game.cairo.set_antialias(cairo.ANTIALIAS_NONE)
-        #Game.cairo.set_line_cap(cairo.LINE_CAP_BUTT)
-        #Game.cairo.set_line_width(1.0)
-
-        # Clear the screen.
-        Game.cairo.set_source_rgba(0, 0, 0)
-        Game.cairo.rectangle(0, 0, self.width, self.height)
-        Game.cairo.fill()
-
-        # Handle current game sequence.
-        if (Game.Sequence == 0): # Intro
-            SequenceIntro()
-        elif (Game.Sequence == 1): # New stage
-            SequenceNewStage()
-        elif (Game.Sequence == 2): # Ball release
-            SequenceBallRelease()
-        elif (Game.Sequence == 3): # Play
-            SequencePlay()
-        elif (Game.Sequence == 4): # Game over
-            SequenceGameOver()
-        elif (Game.Sequence == 5): # You Win
-            SequenceYouWin()
-
-        self.drawareactx.set_source_surface(Game.cairosurf, 0, 0)
-        self.drawareactx.rectangle(0, 0, self.width, self.height)
-        self.drawareactx.fill()
-
-        return True
 
