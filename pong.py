@@ -1,14 +1,25 @@
 #!/usr/bin/env python
 """3DPong - 3D action game by Wade Brainerd."""
 
-import logging, os, time, math, threading, random
 from gettext import gettext as _
+
+default_stage_descs = [
+    { 'Name': _('normal'), 'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, },
+    { 'Name': _('bounce'), 'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 2, 'AIRecenter': 1, },
+    { 'Name': _('wide'),   'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  4, 'PaddleWidth': 50, 'PaddleHeight': 15, 'AISpeed': 4, 'AIRecenter': 1, },
+    { 'Name': _('deep'),   'StageDepth': 500, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25, 'AISpeed': 5, 'AIRecenter': 0, },
+    { 'Name': _('rotate'), 'StageDepth': 160, 'StageXGravity': 1, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 5, 'AIRecenter': 1, },
+]
+
+import logging, os, time, math, threading, random, json
 
 import gobject, pygtk, gtk, pango, cairo
 gobject.threads_init()  
 
 from sugar.activity import activity
 from sugar.graphics import *
+from sugar.graphics import toggletoolbutton
+from sugar.graphics import icon
 
 log = logging.getLogger('3dpong')
 log.setLevel(logging.DEBUG)
@@ -49,15 +60,6 @@ class Rect:
         self.left = 0
         self.right = 0
         self.bottom = 0
-
-stage_descs = [
-    { 'Name': _('normal'), 'AISpeed': 1, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSize': 1, 'BallSpeed': 3, 'PaddleWidth': 20, 'PaddleHeight': 20 },
-    { 'Name': _('bounce'), 'AISpeed': 2, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 1, 'StageCrossGravity': 0, 'BallSize': 1, 'BallSpeed': 3, 'PaddleWidth': 20, 'PaddleHeight': 20 },
-    { 'Name': _('wide'),   'AISpeed': 4, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 1, 'StageCrossGravity': 0, 'BallSize': 1, 'BallSpeed': 4, 'PaddleWidth': 100, 'PaddleHeight': 15 },
-    { 'Name': _('deep'),   'AISpeed': 5, 'AIRecenter': 0, 'StageDepth': 500, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25 },
-    { 'Name': _('rotate'), 'AISpeed': 5, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 1, 'BallSize': 1, 'BallSpeed': 5, 'PaddleWidth': 25, 'PaddleHeight': 20 },
-]
-
 
 # Virtual screen dimensions
 # This game was ported from a Palm OS app, and it would be difficult to change all the internal calculations to a new resolution. 
@@ -138,18 +140,23 @@ class Ball:
         self.lastvel = Vector()
         self.pos = Vector()
         self.vel = Vector()
+        self.size = 1
+        self.speed = 1
     
+    def setup (self, desc):
+        self.size = to_fixed(desc['BallSize'])
+        self.speed = to_fixed(desc['BallSpeed'])
+
+        self.pos = Vector(to_fixed(50), to_fixed(25), to_fixed(desc['StageDepth'])/2)
+        self.vel = Vector(to_fixed(2), to_fixed(2), self.speed)
+
     def draw (self, stage):
         # Draw the ball.
         begin_prim(PRIM_FILL)
-        circle3d(self.pos.x, self.pos.y, self.pos.z, stage.ballsize)
+        circle3d(self.pos.x, self.pos.y, self.pos.z, self.size)
     
         # Draw the shadow.
-        #DrawEllipse3D(Ball.pos.x, Stage.window.bottom, Ball.pos.z, game.stage.ballsize*2, game.stage.ballsize, (64, 64, 64))
-
-    def setup (self, speed):
-        self.pos = Vector(to_fixed(50), to_fixed(25), game.stage.depth/2)
-        self.vel = Vector(to_fixed(2), to_fixed(2), speed)
+        #DrawEllipse3D(Ball.pos.x, Stage.window.bottom, Ball.pos.z, self.size*2, self.size, (64, 64, 64))
 
     # 0 if nobody scored, 1 if Paddle1 scored, 2 if Paddle2 scored.
     def update (self, paddle1, paddle2, stage):
@@ -194,8 +201,8 @@ class Ball:
             first_collision_cur_time = -1
     
             # Check stage walls.  First checks to see if the boundary was crossed, if so then calculates cur_time, etc.
-            if ( next_ball_pos.x - game.stage.ballsize <= 0 ): # Left wall
-                cur_time = ( self.pos.x - game.stage.ballsize ) * time_res / -self.vel.x # negative Vx is to account for left wall facing.
+            if ( next_ball_pos.x - self.size <= 0 ): # Left wall
+                cur_time = ( self.pos.x - self.size ) * time_res / -self.vel.x # negative Vx is to account for left wall facing.
                 if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
                     # Set new first collision.
                     first_collision_cur_time = cur_time
@@ -203,8 +210,8 @@ class Ball:
                     first_collision_vel.y = self.vel.y
                     first_collision_vel.z = self.vel.z
                     first_collision_type = 5
-            if ( next_ball_pos.x + game.stage.ballsize >= stage.window.right ): # Right wall
-                cur_time = ( stage.window.right - ( self.pos.x + game.stage.ballsize ) ) * time_res / self.vel.x
+            if ( next_ball_pos.x + self.size >= stage.window.right ): # Right wall
+                cur_time = ( stage.window.right - ( self.pos.x + self.size ) ) * time_res / self.vel.x
                 if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
                     # Set new first collision.
                     first_collision_cur_time = cur_time
@@ -212,8 +219,8 @@ class Ball:
                     first_collision_vel.y = self.vel.y
                     first_collision_vel.z = self.vel.z
                     first_collision_type = 5
-            if ( next_ball_pos.y - game.stage.ballsize <= 0 and self.vel.y != 0): # Top wall
-                cur_time = ( self.pos.y - game.stage.ballsize ) * time_res / -self.vel.y
+            if ( next_ball_pos.y - self.size <= 0 and self.vel.y != 0): # Top wall
+                cur_time = ( self.pos.y - self.size ) * time_res / -self.vel.y
                 if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
                     # Set new first collision.
                     first_collision_cur_time = cur_time
@@ -221,8 +228,8 @@ class Ball:
                     first_collision_vel.y = -self.vel.y
                     first_collision_vel.z = self.vel.z
                     first_collision_type = 5
-            if ( next_ball_pos.y + game.stage.ballsize >= stage.window.bottom  and self.vel.y != 0): # Bottom wall
-                cur_time = ( stage.window.bottom - ( self.pos.y + game.stage.ballsize ) ) * time_res / self.vel.y
+            if ( next_ball_pos.y + self.size >= stage.window.bottom  and self.vel.y != 0): # Bottom wall
+                cur_time = ( stage.window.bottom - ( self.pos.y + self.size ) ) * time_res / self.vel.y
                 if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
                     # Set new first collision.
                     first_collision_cur_time = cur_time
@@ -235,18 +242,18 @@ class Ball:
                 if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
                     # Set new first collision.
                     first_collision_cur_time = cur_time
-                    first_collision_vel.x = self.vel.x #(random.randint(0, 3))-1 * game.stage.ballspeed
-                    first_collision_vel.y = self.vel.y #(random.randint(0, 3))-1 * game.stage.ballspeed
-                    first_collision_vel.z = game.stage.ballspeed
+                    first_collision_vel.x = self.vel.x #(random.randint(0, 3))-1 * self.speed
+                    first_collision_vel.y = self.vel.y #(random.randint(0, 3))-1 * self.speed
+                    first_collision_vel.z = self.speed
                     first_collision_type = 2
             if ( next_ball_pos.z >= stage.depth ): # Back wall
                 cur_time = ( stage.depth - self.pos.z ) * time_res / self.vel.z
                 if ( first_collision_cur_time == -1 or cur_time < first_collision_cur_time ):
                     # Set new first collision.
                     first_collision_cur_time = cur_time
-                    first_collision_vel.x = self.vel.x #(random.randint(0, 3))-1 * game.stage.ballspeed
-                    first_collision_vel.y = self.vel.y #(random.randint(0, 3))-1 * game.stage.ballspeed
-                    first_collision_vel.z = -game.stage.ballspeed
+                    first_collision_vel.x = self.vel.x #(random.randint(0, 3))-1 * self.speed
+                    first_collision_vel.y = self.vel.y #(random.randint(0, 3))-1 * self.speed
+                    first_collision_vel.z = -self.speed
                     first_collision_type = 1
             # Paddle collision.  Paddle collisions are inaccurate, in that it doesn't take into account the velocity of 
             # the ball in its 2D check, it uses the original 2D position.
@@ -323,7 +330,7 @@ class Ball:
     
         # Apply gravity.
         self.vel.y += game.stage.gravity
-        if ( self.pos.y + game.stage.ballsize + 20 > stage.window.bottom and math.fabs(self.vel.y) == 0 ):
+        if ( self.pos.y + self.size + 20 > stage.window.bottom and math.fabs(self.vel.y) == 0 ):
             self.vel.y -= 6
         self.vel.x += game.stage.crossgravity
     
@@ -383,7 +390,10 @@ class Paddle:
         self.pos.x = min(self.pos.x, game.stage.window.right - self.halfwidth)
         self.pos.y = min(self.pos.y, game.stage.window.bottom - self.halfheight)
 
-    def setup_player(self, w, h):
+    def setup_player(self, desc):
+        w = to_fixed(desc['PaddleWidth'])
+        h = to_fixed(desc['PaddleHeight'])
+
         self.halfwidth = w
         self.halfheight = h
 
@@ -434,7 +444,10 @@ class Paddle:
         self.delta.y = self.pos.y - lastpos.y
         self.delta.z = self.pos.z - lastpos.z
 
-    def setup_ai (self, w, h):
+    def setup_ai(self, desc):
+        w = to_fixed(desc['PaddleWidth'])
+        h = to_fixed(desc['PaddleHeight'])
+
         self.score = 0
 
         self.halfwidth = w
@@ -497,18 +510,25 @@ class Paddle:
 
 class Stage:
     def __init__(self):
-        # How long the stage is from near side to far side.
         self.depth = 0
-        self.window = Rect()
-
         self.gravity = 0
         self.crossgravity = 0
-        self.ballspeed = 0
-        self.ballsize = 0
+        self.window = Rect()
+
+    def setup(self, desc):
+        self.name = desc['Name']
+        self.depth = to_fixed(desc['StageDepth'])
+        self.gravity = to_fixed(desc['StageYGravity'])
+        self.crossgravity = to_fixed(desc['StageXGravity'])
+
+        self.window.left = 0
+        self.window.right = to_fixed(99)
+        self.window.top = 0
+        self.window.bottom = to_fixed(99)
 
     def draw (self):
         window = self.window
-    
+
         begin_prim(PRIM_LINE)
         v = 255*game.brightness/100.0
         set_color(Color(v,v,v))
@@ -552,19 +572,14 @@ class Stage:
         v = 255*game.brightness/100.0
         set_color(Color(v,v,v))
 
-    def setup(self, depth, grav, speed):
-        self.gravity = grav
-        self.ballspeed = speed
-        self.depth = depth
-        self.window.left = 0
-        self.window.right = to_fixed(99)
-        self.window.top = 0
-        self.window.bottom = to_fixed(99)
-
 class AI:
     def __init__(self):
         self.speed = 0
         self.recenter = False
+
+    def setup (self, desc):
+        self.speed = to_fixed(desc['AISpeed'])
+        self.recenter = desc['AIRecenter']
 
 class IntroSequence:
     def enter (self):
@@ -604,7 +619,7 @@ class NewStageSequence:
     def draw (self):
         game.draw()
         set_color(Color(self.timer0/100.0*255.0, self.timer0/100.0*255.0, self.timer0/100.0*255.0))
-        draw_text(stage_descs[game.curlevel]['Name'], -1, -1, 100)
+        draw_text(game.stage_descs[game.curlevel]['Name'], -1, -1, 100)
 
     def update (self):
         if (self.timer1 == 0):
@@ -612,7 +627,7 @@ class NewStageSequence:
             self.timer0 += 2
             if (self.timer0 >= 100):
                 self.timer1 = 1
-                game.next_level()
+                game.set_level(game.curlevel+1)
         elif (self.timer1 == 1):
             if (game.brightness < 100): game.brightness += 1
             self.timer0 -= 2
@@ -648,6 +663,7 @@ class PlaySequence:
         self.timer0 = 0
         self.timer1 = 0
         self.endtimeout = 0
+        game.brightness = 100
 
     def leave (self):
         pass
@@ -671,13 +687,13 @@ class PlaySequence:
         if ( game.paddle1.score == 5 or game.paddle2.score == 5 ):
             self.endtimeout += 1
         if ( self.endtimeout >= 5 ):
-            stage_descs[game.curlevel]['PlayerScore'] = game.paddle1.score
-            stage_descs[game.curlevel]['AIScore'] = game.paddle2.score
+            game.stage_descs[game.curlevel]['PlayerScore'] = game.paddle1.score
+            game.stage_descs[game.curlevel]['AIScore'] = game.paddle2.score
             if ( game.paddle2.score == 5 ):
                 game.set_sequence(LoseSequence())
             if ( game.paddle1.score == 5 ):
                 game.curlevel += 1
-                if (game.curlevel == len(stage_descs)):
+                if (game.curlevel == len(game.stage_descs)):
                     game.set_sequence(WinSequence())
                 else:
                     game.set_sequence(NewStageSequence())
@@ -703,7 +719,7 @@ class ScoreSequence:
         set_color(Color(b,b,b))
 
         begin_prim(PRIM_LINE)
-        circle3d(game.ball.lastpos.x+game.ball.lastvel.x*self.step/2, game.ball.lastpos.y+game.ball.lastvel.y*self.step/2, game.ball.lastpos.z+game.ball.lastvel.z*self.step/2, game.stage.ballsize)
+        circle3d(game.ball.lastpos.x+game.ball.lastvel.x*self.step/2, game.ball.lastpos.y+game.ball.lastvel.y*self.step/2, game.ball.lastpos.z+game.ball.lastvel.z*self.step/2, game.ball.size)
         random.seed(12345678)
         for ring in range(0, num_rings):
             b = 255*(1.0-float(self.step)/self.num_steps)*(0.5+0.5*math.cos(math.pi*float(ring)/num_rings))
@@ -760,7 +776,7 @@ class WinSequence:
             self.timer0 += 1                
             if (self.timer0 >= 1000 or game.mousedown):
                 self.timer1 = 2
-                self.timer0 = len(stage_descs)*30
+                self.timer0 = len(game.stage_descs)*30
         elif (self.timer1 == 2):
             self.timer0 -= 1
             if (self.timer0 <= 0):
@@ -772,12 +788,12 @@ class WinSequence:
     def draw (self):
         starty = 250
         total_score = 0
-        for i in range(0, len(stage_descs)):
+        for i in range(0, len(game.stage_descs)):
             v = clamp(255*self.timer0/60.0 - i*60, 0, 255)
             set_color(Color(v,v,v))
 
-            player_score = stage_descs[i]['player_score']
-            ai_score = stage_descs[i]['ai_score']
+            player_score = game.stage_descs[i]['player_score']
+            ai_score = game.stage_descs[i]['ai_score']
             diff_score = player_score - ai_score
 
             game.draw_score(250, starty + i*50, player_score, 0)
@@ -786,16 +802,16 @@ class WinSequence:
             draw_text('=', 775, starty + i*50, 20)
             game.draw_score(850, starty + i*50, diff_score, 0)
 
-            draw_text(stage_descs[i]['Name'], 125, starty + i*50, 24)
+            draw_text(game.stage_descs[i]['Name'], 125, starty + i*50, 24)
 
             total_score += diff_score
     
-        game.cairo.move_to(250, starty + len(stage_descs)*50)
-        game.cairo.line_to(950, starty + len(stage_descs)*50)
+        game.cairo.move_to(250, starty + len(game.stage_descs)*50)
+        game.cairo.line_to(950, starty + len(game.stage_descs)*50)
         game.cairo.stroke()
         x = 250
-        y = starty + (len(stage_descs)+1)*50
-        for j in range(0, 5*len(stage_descs)):
+        y = starty + (len(game.stage_descs)+1)*50
+        for j in range(0, 5*len(game.stage_descs)):
             game.cairo.move_to(game.xpoints[0][0]*20-10+x, game.xpoints[0][1]*20-10+y)
             for p in game.xpoints:
                 game.cairo.line_to(p[0]*20-10+x, p[1]*20-10+y)
@@ -810,15 +826,28 @@ class WinSequence:
                 y += 50
     
         text = "; - |"
-        if (total_score >= 5*len(stage_descs)):
+        if (total_score >= 5*len(game.stage_descs)):
             text = "; - D"
-        elif (total_score >= 4*len(stage_descs)):
+        elif (total_score >= 4*len(game.stage_descs)):
             text = "; - >"
-        elif (total_score >= 3*len(stage_descs)):
+        elif (total_score >= 3*len(game.stage_descs)):
             text = "; - )"
-        elif (total_score >= 2*len(stage_descs)):
+        elif (total_score >= 2*len(game.stage_descs)):
             text = "; - }"
         draw_text(text, -1, 150, 24)
+
+class EditSequence:
+    def enter (self):
+        game.brightness = 100
+
+    def leave (self):
+        pass
+
+    def draw (self):
+        game.draw()
+
+    def update (self):
+        pass
 
 class Game:
     def __init__(self):
@@ -841,11 +870,17 @@ class Game:
         self.sequence = IntroSequence()
         self.sequence.enter()
         self.brightness = 100
-        
+
         # Current mouse state.
         self.mousex = 0
         self.mousey = 0
         self.mousedown = 0
+
+        # Default stages.
+        self.stage_descs = default_stage_descs
+
+        # Scores.
+        self.scores = []
 
         # The 'X' shape used as an icon.
         self.xpoints = [ (0,0), (0.3,0), (0.5,0.3), (0.7,0), (1,0), (0.7,0.5), (1,1), (0.7,1), (0.5,0.6), (0.3,1), (0,1), (0.3,0.5) ]
@@ -855,27 +890,23 @@ class Game:
         self.sequence = seq
         self.sequence.enter()
 
-    def next_level(self):
-        desc = stage_descs[self.curlevel]
+    def set_level(self, level):
+        if level < 0 or level > len(self.stage_descs)-1:
+            level = 0
 
-        self.stage.name = desc['Name']
+        self.curlevel = level
+        desc = self.stage_descs[self.curlevel]
 
-        self.stage.ballsize = to_fixed(desc['BallSize'])
-        self.ball.setup(to_fixed(desc['BallSpeed']))
+        self.stage.setup(desc)
+        self.ball.setup(desc)
+        self.ai.setup(desc)
 
-        self.stage.setup(to_fixed(desc['StageDepth']), to_fixed(desc['StageGravity']), to_fixed(desc['BallSpeed']))
-        self.stage.crossgravity = to_fixed(desc['StageCrossGravity'])
+        self.paddle1.setup_player(desc)
+        self.paddle2.setup_ai(desc)
 
-        self.ai.speed = desc['AISpeed']*256
-        self.ai.recenter = desc['AIRecenter']
-
-        self.paddle1.setup_player(to_fixed(desc['PaddleWidth']), to_fixed(desc['PaddleHeight']))
-        self.paddle2.setup_ai(to_fixed(desc['PaddleWidth']), to_fixed(desc['PaddleHeight']))
-    
     def new_game(self):
-        self.curlevel = 0
-        self.next_level()
-    
+        self.set_level(0)
+
     def draw_score(self, x, y, score, player):
         for j in range(0, 5):
             if j < score:
@@ -910,12 +941,207 @@ class Game:
         self.draw_score(actual_screen_width*3/4-75, 30, self.paddle2.score, 2)
     
         #game.cairo.set_source_rgb(color[0]/255.0, color[1]/255.0, color[2]/255.0)
-        #draw_text(stage_descs[game.curlevel]['Name'], -1, 30, 24)
+        #draw_text(game.stage_descs[game.curlevel]['Name'], -1, 30, 24)
 
 # Global game instance.
 game = Game()
 
+class Editor(gtk.Layout):
+
+    STEP_STAGENAME    = 0
+    STEP_STAGEDEPTH   = 1
+    STEP_STAGEGRAVITY = 2
+    STEP_BALL         = 3
+    STEP_PADDLE       = 4
+    STEP_AI           = 5
+    STEP_MAX          = 6
+
+    def __init__ (self):
+        # todo- This should not be a gtk.Layout, since it needs to actually derive its required size from its children.
+        # However, no other kind of container seems to not draw its background when exposed!
+        gtk.Layout.__init__(self)
+
+        self.hbox = gtk.HBox()
+        self.hbox.set_size_request(1024, 80)
+        self.put(self.hbox, 0, 0)
+
+        self.hbox.set_border_width(10)
+        self.hbox.set_spacing(10)
+
+        self.prevbtn = gtk.Button()
+        self.prevbtn.add(icon.Icon(icon_name='go-left'))
+        #self.prevbtn.set_tooltip(_("Previous"))
+        self.prevbtn.connect('clicked', self.on_prev)
+
+        self.nextbtn = gtk.Button()
+        self.nextbtn.add(icon.Icon(icon_name='go-right'))
+        self.nextbtn.connect('clicked', self.on_next)
+
+        self.hbox.pack_end(self.nextbtn, False, False)
+        self.hbox.pack_end(self.prevbtn, False, False)
+
+        self.propbox = gtk.HBox()
+        self.propbox.set_spacing(20)
+
+        self.hbox.pack_start(self.propbox)
+
+        self.separator = gtk.VSeparator()
+
+        self.stage_label = gtk.Label()
+        self.stage_label.set_markup('<big>'+_('Stage')+'</big>')
+
+        self.stagename_label = gtk.Label(_('Name'))
+        self.stagename_entry = gtk.Entry()
+        self.stagename_entry.connect('changed', self.on_entry_changed)
+
+        self.stagedepth_label = gtk.Label(_('Depth'))
+        self.stagedepth_adjust = gtk.Adjustment(100, 10, 1000, 1)
+        self.stagedepth_adjust.connect('value-changed', self.on_value_changed)
+        self.stagedepth_scale = gtk.HScale(self.stagedepth_adjust)
+
+        self.stagegravity_x_label = gtk.Label(_('X Gravity'))
+        self.stagegravity_x_adjust = gtk.Adjustment(0, -3, 3, 1)
+        self.stagegravity_x_adjust.connect('value-changed', self.on_value_changed)
+        self.stagegravity_x_scale = gtk.HScale(self.stagegravity_x_adjust)
+        self.stagegravity_y_label = gtk.Label(_('Y Gravity'))
+        self.stagegravity_y_adjust = gtk.Adjustment(1, -3, 3, 1)
+        self.stagegravity_y_adjust.connect('value-changed', self.on_value_changed)
+        self.stagegravity_y_scale = gtk.HScale(self.stagegravity_y_adjust)
+
+        self.ball_label = gtk.Label()
+        self.ball_label.set_markup('<big>'+_('Ball')+'</big>')
+
+        self.ballsize_label = gtk.Label(_('Size'))
+        self.ballsize_adjust = gtk.Adjustment(1, 1, 5, 1)
+        self.ballsize_adjust.connect('value-changed', self.on_value_changed)
+        self.ballsize_scale = gtk.HScale(self.ballsize_adjust)
+        self.ballspeed_label = gtk.Label(_('Speed'))
+        self.ballspeed_adjust = gtk.Adjustment(10, 1, 20, 1)
+        self.ballspeed_adjust.connect('value-changed', self.on_value_changed)
+        self.ballspeed_scale = gtk.HScale(self.ballspeed_adjust)
+
+        self.paddle_label = gtk.Label()
+        self.paddle_label.set_markup('<big>'+_('Paddle')+'</big>')
+
+        self.paddlesize_x_label = gtk.Label(_('X Size'))
+        self.paddlesize_x_adjust = gtk.Adjustment(20, 1, 50, 1)
+        self.paddlesize_x_adjust.connect('value-changed', self.on_value_changed)
+        self.paddlesize_x_scale = gtk.HScale(self.paddlesize_x_adjust)
+        self.paddlesize_y_label = gtk.Label(_('Y Size'))
+        self.paddlesize_y_adjust = gtk.Adjustment(20, 1, 50, 1)
+        self.paddlesize_y_adjust.connect('value-changed', self.on_value_changed)
+        self.paddlesize_y_scale = gtk.HScale(self.paddlesize_y_adjust)
+
+        self.ai_label = gtk.Label()
+        self.ai_label.set_markup('<big>'+_('AI')+'</big>')
+
+        self.aispeed_label = gtk.Label(_('Speed'))
+        self.aispeed_adjust = gtk.Adjustment(1, 1, 10, 1)
+        self.aispeed_adjust.connect('value-changed', self.on_value_changed)
+        self.aispeed_scale = gtk.HScale(self.aispeed_adjust)
+
+        self.ignore_changes = False
+
+        self.set_step(Editor.STEP_STAGENAME)
+
+    def on_entry_changed (self, editable):
+        if not self.ignore_changes:
+            self.copy_to_desc(game.stage_descs[game.curlevel])
+            game.set_level(game.curlevel)
+            self.activity.queue_draw()
+
+    def on_value_changed (self, adjustment):
+        if not self.ignore_changes:
+            self.copy_to_desc(game.stage_descs[game.curlevel])
+            game.set_level(game.curlevel)
+            self.activity.queue_draw()
+
+    def copy_from_desc (self, desc):
+        self.ignore_changes = True
+        self.stagename_entry.set_text(desc['Name'])
+        self.stagedepth_adjust.set_value(desc['StageDepth'])
+        self.stagegravity_x_adjust.set_value(desc['StageXGravity'])
+        self.stagegravity_y_adjust.set_value(desc['StageYGravity'])
+        self.ballsize_adjust.set_value(desc['BallSize'])
+        self.ballspeed_adjust.set_value(desc['BallSpeed'])
+        self.paddlesize_x_adjust.set_value(desc['PaddleWidth'])
+        self.paddlesize_y_adjust.set_value(desc['PaddleHeight'])
+        self.aispeed_adjust.set_value(desc['AISpeed'])
+        self.ignore_changes = False
+
+    def copy_to_desc (self, desc):
+        desc['Name'] = self.stagename_entry.get_text()
+        desc['StageDepth'] = self.stagedepth_adjust.get_value()
+        desc['StageXGravity'] = self.stagegravity_x_adjust.get_value()
+        desc['StageYGravity'] = self.stagegravity_y_adjust.get_value()
+        desc['BallSize'] = self.ballsize_adjust.get_value()
+        desc['BallSpeed'] = self.ballspeed_adjust.get_value()
+        desc['PaddleWidth'] = self.paddlesize_x_adjust.get_value()
+        desc['PaddleHeight'] = self.paddlesize_y_adjust.get_value()
+        desc['AISpeed'] = self.aispeed_adjust.get_value()
+
+    def on_prev (self, btn):
+        if self.step > 0:
+            self.set_step(self.step-1)
+
+    def on_next (self, btn):
+        if self.step < Editor.STEP_MAX-1:
+            self.set_step(self.step+1)
+
+    def set_step (self, step):
+        for w in self.propbox.get_children():
+            self.propbox.remove(w)
+
+        self.step = step
+
+        if self.step == Editor.STEP_STAGENAME:
+            self.propbox.pack_start(self.stage_label, False, False)
+            self.propbox.pack_start(self.separator, False, False)
+            self.propbox.pack_start(self.stagename_label, False, False)
+            self.propbox.pack_start(self.stagename_entry)
+
+        if self.step == Editor.STEP_STAGEDEPTH:
+            self.propbox.pack_start(self.stage_label, False, False)
+            self.propbox.pack_start(self.separator, False, False)
+            self.propbox.pack_start(self.stagedepth_label, False, False)
+            self.propbox.pack_start(self.stagedepth_scale)
+
+        if self.step == Editor.STEP_STAGEGRAVITY:
+            self.propbox.pack_start(self.stage_label, False, False)
+            self.propbox.pack_start(self.separator, False, False)
+            self.propbox.pack_start(self.stagegravity_x_label, False, False)
+            self.propbox.pack_start(self.stagegravity_x_scale)
+            self.propbox.pack_start(self.stagegravity_y_label, False, False)
+            self.propbox.pack_start(self.stagegravity_y_scale)
+
+        if self.step == Editor.STEP_BALL:
+            self.propbox.pack_start(self.ball_label, False, False)
+            self.propbox.pack_start(self.separator, False, False)
+            self.propbox.pack_start(self.ballsize_label, False, False)
+            self.propbox.pack_start(self.ballsize_scale)
+            self.propbox.pack_start(self.ballspeed_label, False, False)
+            self.propbox.pack_start(self.ballspeed_scale)
+
+        if self.step == Editor.STEP_PADDLE:
+            self.propbox.pack_start(self.paddle_label, False, False)
+            self.propbox.pack_start(self.separator, False, False)
+            self.propbox.pack_start(self.paddlesize_x_label, False, False)
+            self.propbox.pack_start(self.paddlesize_x_scale)
+            self.propbox.pack_start(self.paddlesize_y_label, False, False)
+            self.propbox.pack_start(self.paddlesize_y_scale)
+
+        if self.step == Editor.STEP_AI:
+            self.propbox.pack_start(self.ai_label, False, False)
+            self.propbox.pack_start(self.separator, False, False)
+            self.propbox.pack_start(self.aispeed_label, False, False)
+            self.propbox.pack_start(self.aispeed_scale)
+
+        self.propbox.show_all()
+
 class PongActivity(activity.Activity):
+
+    MODE_GAME = 0
+    MODE_EDIT = 1
 
     def __init__ (self, handle):
         activity.Activity.__init__(self, handle)
@@ -926,28 +1152,34 @@ class PongActivity(activity.Activity):
         self.width = gtk.gdk.screen_width()
         self.height = gtk.gdk.screen_height()
 
-        # Build the toolbar.
-        self.build_toolbar()
+        # Build the toolbars.
+        self.build_toolbox()
 
         # Set up the drawing window and context.
         self.build_drawarea()
         self.build_cairo()
 
-        # Build the level editor.
-        self.build_editor()
+        # Build the editor.
+        self.editor = Editor()
+        self.editor.activity = self
+        self.editor.set_size_request(self.width, 80)
+        self.drawarea.put(self.editor, 0, 0)
+        self.editor.hide_all()
 
         # Turn off double buffering.
         self.set_double_buffered(False)
-        self.drawarea.set_double_buffered(True)
+        self.drawarea.set_double_buffered(False)
 
         # Initialize the game.
         game.new_game()
+
         self.paused = False
+        self.set_mode(PongActivity.MODE_GAME)
 
         # Get the mainloop ready to run.
         gobject.timeout_add(50, self.mainloop)
 
-        # Show everything.
+        # Show everything (except the editor).
         self.show_all()
 
     def build_drawarea (self):
@@ -955,6 +1187,7 @@ class PongActivity(activity.Activity):
         self.drawarea.set_size_request(self.width, self.height)
 
         self.drawarea.connect('destroy', self.on_destroy)
+        self.drawarea.connect('expose-event', self.on_drawarea_expose)
 
         self.drawarea.add_events(gtk.gdk.POINTER_MOTION_MASK|gtk.gdk.BUTTON_PRESS_MASK|gtk.gdk.BUTTON_RELEASE_MASK)
         self.drawarea.connect('motion-notify-event', self.on_mouse)
@@ -973,85 +1206,166 @@ class PongActivity(activity.Activity):
         #game.cairo.set_line_cap(cairo.LINE_CAP_BUTT)
         #game.cairo.set_line_width(1.0)
 
-    def build_toolbar (self):
-        self.editorbtn = gtk.ToggleToolButton()
-        self.editorbtn.set_icon_name('media-playback-start')
-        self.editorbtn.connect('clicked', self.on_toggle_editor)
+    def build_toolbox (self):
+        self.pausebtn = toolbutton.ToolButton('media-playback-pause')
+        self.pausebtn.set_tooltip(_("Pause Game"))
+        self.pausebtn.connect('clicked', self.on_game_pause)
+
+        self.showscoresbtn = toolbutton.ToolButton('zoom-in')
+        self.showscoresbtn.set_tooltip(_("Show Scores"))
+        self.clearscoresbtn = toolbutton.ToolButton('list-remove')
+        self.clearscoresbtn.set_tooltip(_("Reset Scores"))
+
+        self.gamesep = gtk.SeparatorToolItem()
+        self.gamesep.set_expand(True)
+        self.gamesep.set_draw(False)
 
         gamebox = gtk.Toolbar()
-        gamebox.insert(self.editorbtn, -1)
+        gamebox.insert(self.pausebtn, -1)
+        gamebox.insert(self.gamesep, -1)
+        gamebox.insert(self.showscoresbtn, -1)
+        gamebox.insert(self.clearscoresbtn, -1)
 
-        toolbar = activity.ActivityToolbox(self)
-        toolbar.add_toolbar(_("Game"), gamebox)
-        toolbar.show_all()
-        self.set_toolbox(toolbar)
+        self.prevstagebtn = toolbutton.ToolButton('go-left')
+        self.prevstagebtn.set_tooltip(_("Previous Stage"))
+        self.prevstagebtn.connect('clicked', self.on_edit_prevstage)
 
-    def build_editor (self):
-        self.editor = gtk.VBox()
-        self.editor.set_size_request(800, 600)
-        self.editor.set_property("spacing", 20)
+        self.nextstagebtn = toolbutton.ToolButton('go-right')
+        self.nextstagebtn.set_tooltip(_("Next Stage"))
+        self.nextstagebtn.connect('clicked', self.on_edit_nextstage)
 
-        #  { 'Name': _('normal'), 'AISpeed': 1, 'AIRecenter': 1, 'StageDepth': 160, 'StageGravity': 0, 'StageCrossGravity': 0, 'BallSize': 1, 'BallSpeed': 3, 'PaddleWidth': 20, 'PaddleHeight': 20 },
+        self.editsep = gtk.SeparatorToolItem()
+        self.editsep.set_expand(True)
+        self.editsep.set_draw(False)
 
-        # Brush size scrollbar, label and pressure sensitivity checkbox.
-        box = gtk.HBox()
-        box.pack_end(gtk.Label(_('Name')), False)
-        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
-        self.editor.pack_start(box, False)
+        self.deletestagebtn = toolbutton.ToolButton('list-remove')
+        self.deletestagebtn.set_tooltip(_("Delete Stage"))
+        self.deletestagebtn.connect('clicked', self.on_edit_deletestage)
 
-        box = gtk.HBox()
-        box.pack_end(gtk.Label(_('AI Speed')), False)
-        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
-        self.editor.pack_start(box, False)
+        self.addstagebtn = toolbutton.ToolButton('list-add')
+        self.addstagebtn.set_tooltip(_("Add New Stage"))
+        self.addstagebtn.connect('clicked', self.on_edit_addstage)
 
-        box = gtk.HBox()
-        box.pack_end(gtk.Label(_('Stage Depth')), False)
-        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
-        self.editor.pack_start(box, False)
+        editbox = gtk.Toolbar()
+        editbox.insert(self.prevstagebtn, -1)
+        editbox.insert(self.nextstagebtn, -1)
+        editbox.insert(self.editsep, -1)
+        editbox.insert(self.deletestagebtn, -1)
+        editbox.insert(self.addstagebtn, -1)
 
-        box = gtk.HBox()
-        box.pack_end(gtk.Label(_('Gravity')), False)
-        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
-        self.editor.pack_start(box, False)
+        self.tbox = activity.ActivityToolbox(self)
+        self.tbox.add_toolbar(_("Game"), gamebox)
+        self.tbox.add_toolbar(_("Edit"), editbox)
+        self.tbox.show_all()
 
-        box = gtk.HBox()
-        box.pack_end(gtk.Label(_('Cross Gravity')), False)
-        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
-        self.editor.pack_start(box, False)
+        self.tbox.connect('current-toolbar-changed', self.on_toolbox_changed)
 
-        box = gtk.HBox()
-        box.pack_end(gtk.Label(_('Ball Size')), False)
-        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
-        self.editor.pack_start(box, False)
+        self.set_toolbox(self.tbox)
 
-        box = gtk.HBox()
-        box.pack_end(gtk.Label(_('Ball Speed')), False)
-        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
-        self.editor.pack_start(box, False)
+    def set_mode (self, mode):
+        self.mode = mode
 
-        box = gtk.HBox()
-        box.pack_end(gtk.Label(_('Paddle Width')), False)
-        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
-        self.editor.pack_start(box, False)
+        if self.mode == PongActivity.MODE_GAME:
+            self.editor.hide_all()
+            game.set_sequence(PlaySequence())
 
-        box = gtk.HBox()
-        box.pack_end(gtk.Label(_('Paddle Height')), False)
-        box.pack_end(gtk.HScale(gtk.Adjustment(50, 1, 260, 1, 10, 10)))
-        self.editor.pack_start(box, False)
+        if self.mode == PongActivity.MODE_EDIT:
+            self.pause_game(True)
 
-        self.drawarea.put(self.editor, 25, 100)
+            game.set_sequence(EditSequence())
 
-    def on_toggle_editor (self, button):
-        if button.get_active():
-            self.paused = True
-            self.editor.show()
+            self.editor.copy_from_desc(game.stage_descs[game.curlevel])
+            self.editor.show_all()
+
             self.queue_draw()
+
+    def on_toolbox_changed (self, toolbar, idx):
+        bar = self.tbox.get_current_toolbar()
+        if bar == 0: # Activity
+            self.set_mode(PongActivity.MODE_GAME)
+        elif bar == 1: # Game
+            self.set_mode(PongActivity.MODE_GAME)
+        elif bar == 2: # Edit
+            self.set_mode(PongActivity.MODE_EDIT)
+
+    # Game toolbar
+    def on_game_pause (self, button):
+        self.pause_game(not self.paused)
+
+    def on_game_showscores (self, button):
+        log.debug("on_game_showscores not implemented");
+
+    def on_game_clearscores (self, button):
+        log.debug("on_game_clearscores not implemented");
+
+    # Edit toolbar
+    def on_edit_prevstage (self, button):
+        if game.curlevel > 0:
+            game.set_level(game.curlevel-1)
+            self.editor.copy_from_desc(game.stage_descs[game.curlevel])
+            self.queue_draw()
+
+    def on_edit_nextstage (self, button):
+        if game.curlevel < len(game.stage_descs)-1:
+            game.set_level(game.curlevel+1)
+            self.editor.copy_from_desc(game.stage_descs[game.curlevel])
+            self.queue_draw()
+
+    def on_edit_addstage (self, button):
+        desc = { 'Name': _('new stage'), 'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, }
+        game.stage_descs.append(desc)
+
+        game.set_level(len(game.stage_descs)-1)
+        self.editor.copy_from_desc(game.stage_descs[game.curlevel])
+        self.queue_draw()
+
+    def on_edit_deletestage (self, button):
+        if len(game.stage_descs) <= 1:
+            return
+        del game.stage_descs[game.curlevel]
+        if game.curlevel > len(game.stage_descs)-1:
+            game.curlevel = len(game.stage_descs)-1
+        game.set_level(game.curlevel)
+        self.editor.copy_from_desc(game.stage_descs[game.curlevel])
+        self.queue_draw()
+
+    # Drawing methods
+    def on_drawarea_expose (self, widget, event):
+        if not self.drawarea.bin_window:
+            return True
+
+        global actual_screen_width
+        global actual_screen_height
+        actual_screen_width = self.drawarea.get_allocation()[2]
+        actual_screen_height = self.drawarea.get_allocation()[3]
+
+        # Clear the offscreen surface.
+        game.cairo.set_source_rgba(0, 0, 0)
+        game.cairo.rectangle(0, 0, self.width, self.height)
+        game.cairo.fill()
+
+        # Render the current game state.
+        game.sequence.draw()
+        flush_prim()
+
+        # Draw offscreen surface to screen.
+        ctx = self.drawarea.bin_window.cairo_create()
+        ctx.set_source_surface(game.cairosurf, 0, 0)
+        ctx.rectangle(0, 0, self.width, self.height)
+        ctx.fill()
+
+        # Hack to fix toolbox refresh.
+        self.tbox.queue_draw()
+
+    # Game update methods
+    def pause_game (self, p):
+        self.paused = p
+        if self.paused:
             self.show_cursor(True)
+            self.pausebtn.set_icon('media-playback-start')
         else:
-            self.paused = False
-            self.editor.hide()
-            self.queue_draw()
             self.show_cursor(False)
+            self.pausebtn.set_icon('media-playback-pause')
 
     def show_cursor (self, show):
         if self.cursor_visible and not show:
@@ -1074,39 +1388,19 @@ class PongActivity(activity.Activity):
         if event.type == gtk.gdk.BUTTON_RELEASE:
             game.mousedown = 0
 
+    #-----------------------------------------------------------------------------------------------------------------
+    # Main loop
+
     def on_destroy (self, widget):
         self.running = False
 
     def tick (self):
         if self.paused:
             return True
-        if not self.drawarea.bin_window:
-            return True
 
-        # Clear mouse cursor
-        self.show_cursor(False)
-
-        global actual_screen_width
-        global actual_screen_height
-        actual_screen_width = self.drawarea.get_allocation()[2]
-        actual_screen_height = self.drawarea.get_allocation()[3]
-
-        # Clear the offscreen surface.
-        game.cairo.set_source_rgba(0, 0, 0)
-        game.cairo.rectangle(0, 0, self.width, self.height)
-        game.cairo.fill()
-
-        # Update current game sequence and render into offscreen surface.
+        # Update current game sequence and animate.
         game.sequence.update()
-        game.sequence.draw()
-
-        flush_prim()
-
-        # Draw offscreen surface to screen.
-        ctx = self.drawarea.bin_window.cairo_create()
-        ctx.set_source_surface(game.cairosurf, 0, 0)
-        ctx.rectangle(0, 0, self.width, self.height)
-        ctx.fill()
+        self.drawarea.queue_draw()
 
         return True
 
@@ -1118,4 +1412,56 @@ class PongActivity(activity.Activity):
             while gtk.events_pending():
                 gtk.main_iteration(False)
         return False
+
+    #-----------------------------------------------------------------------------------------------------------------
+    # Journal integration
+
+    def read_file(self, file_path):
+        # Load document.
+        if self.metadata['mime_type'] == 'text/plain':
+            fd = open(file_path, 'r')
+            try:
+                data = fd.read()
+            finally:
+                fd.close()
+
+            storage = json.read(data)
+
+            # Restore stages.
+            game.stage_descs = storage['Stages']
+
+            # Restore activity state.
+            game.set_level(storage.get('curlevel', 0))
+            self.set_mode(storage.get('mode', PongActivity.MODE_GAME))
+
+            # Switch to editor toolbox if in edit mode.
+            if self.mode == PongActivity.MODE_EDIT:
+                self.tbox.set_current_toolbar(2)
+
+            # Game always restores paused.
+            self.pause_game(True)
+
+    def write_file(self, file_path):
+        # Save document.
+        if not self.metadata['mime_type']:
+            self.metadata['mime_type'] = 'text/plain'
+
+        storage = {}
+
+        # Save stages.
+        storage['Stages'] = game.stage_descs
+
+        # Save activity state.
+        storage['curlevel'] = game.curlevel
+        storage['mode'] = self.mode
+
+        fd = open(file_path, 'w')
+        try:
+            fd.write(json.write(storage))
+        finally:
+            fd.close()
+
+    #def take_screenshot (self):
+    #    if self.easelarea and self.drawarea.bin_window:
+    #        self._preview.take_screenshot(self.drawarea.bin_window)
 
