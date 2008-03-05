@@ -13,6 +13,8 @@ default_stage_descs = [
 
 import logging, os, time, math, threading, random, json
 
+from pongc import *
+
 import gobject, pygtk, gtk, pango, cairo
 gobject.threads_init()  
 
@@ -76,63 +78,101 @@ def project_x(x, y, z):
 def project_y(x, y, z):
     return (to_fixed(50) + ( y - to_fixed(50) ) * viewport_scale / ( z + viewport_scale )) * actual_screen_height/100 / 256
 
+#PRIM_LINE = 0
+#PRIM_FILL = 1
+#
+#curprim = PRIM_LINE
+#
+#def flush_prim ():
+#    global curprim
+#    if curprim == PRIM_LINE:
+#        game.cairo.stroke()
+#    else:
+#        game.cairo.fill()
+#
+#def begin_prim (prim):
+#    global curprim
+#    if prim != curprim:
+#        flush_prim()
+#        curprim = prim
+#
+#def set_color (color):
+#    flush_prim()
+#    game.cairo.set_source_rgb(color.r/255.0, color.g/255.0, color.b/255.0)
+#
+#def line3d(x1, y1, z1, x2, y2, z2):
+#    game.cairo.move_to(project_x( x1, y1, z1 ), project_y( x1, y1, z1 ))
+#    game.cairo.line_to(project_x( x2, y2, z2 ), project_y( x2, y2, z2 ))
+#
+#def rect3d(rect, depth):
+#    x1 = project_x( rect.left, rect.top, depth ) + 1
+#    y1 = project_y( rect.left, rect.top, depth ) + 1
+#    x2 = project_x( rect.right, rect.bottom, depth ) - 1
+#    y2 = project_y( rect.right, rect.bottom, depth ) - 1
+#
+#    game.cairo.move_to(x1, y1)
+#    game.cairo.line_to(x2, y1)
+#    game.cairo.line_to(x2, y2)
+#    game.cairo.line_to(x1, y2)
+#    game.cairo.line_to(x1, y1)
+#
+#def circle3d(x, y, z, radius):
+#    r = project_x(x+radius, y, z)-project_x(x, y, z)
+#    if r < 1: return
+#
+#    x = project_x( x, y, z )
+#    y = project_y( x, y, z )
+#
+#    game.cairo.move_to(x+r, y)
+#    game.cairo.arc(x, y, r, 0, 2*math.pi)
+#
+#def draw_text (text, x, y, size):
+#    game.cairo.set_font_size(size)
+#    x_bearing, y_bearing, width, height = game.cairo.text_extents(text)[:4]
+#
+#    if x == -1: x = actual_screen_width/2
+#    if y == -1: y = actual_screen_height/2
+#
+#    game.cairo.move_to(x - width/2 - x_bearing, y - height/2 - y_bearing)
+#    game.cairo.show_text(text)
+
+cur_color = 31
+
 PRIM_LINE = 0
 PRIM_FILL = 1
 
-curprim = PRIM_LINE
-
 def flush_prim ():
-    global curprim
-    if curprim == PRIM_LINE:
-        game.cairo.stroke()
-    else:
-        game.cairo.fill()
+    pass
 
 def begin_prim (prim):
-    global curprim
-    if prim != curprim:
-        flush_prim()
-        curprim = prim
+    pass
 
 def set_color (color):
-    flush_prim()
-    game.cairo.set_source_rgb(color.r/255.0, color.g/255.0, color.b/255.0)
+    pass
 
-def line3d(x1, y1, z1, x2, y2, z2):
-    game.cairo.move_to(project_x( x1, y1, z1 ), project_y( x1, y1, z1 ))
-    game.cairo.line_to(project_x( x2, y2, z2 ), project_y( x2, y2, z2 ))
+def line3d(x0, y0, z0, x1, y1, z1, c):
+    draw_line_2x(
+        game.drawimage, 
+        project_x(x0, y0, z0), project_y(x0, y0, z0), 
+        project_x(x1, y1, z1), project_y(x1, y1, z1), 
+        int(c*31.0))
 
-def rect3d(rect, depth):
-    x1 = project_x( rect.left, rect.top, depth ) + 1
-    y1 = project_y( rect.left, rect.top, depth ) + 1
-    x2 = project_x( rect.right, rect.bottom, depth ) - 1
-    y2 = project_y( rect.right, rect.bottom, depth ) - 1
+def rect3d(rect, depth, c):
+    x0 = project_x(rect.left, rect.top, depth) + 1
+    y0 = project_y(rect.left, rect.top, depth) + 1
+    x1 = project_x(rect.right, rect.bottom, depth) - 1
+    y1 = project_y(rect.right, rect.bottom, depth) - 1
 
-    game.cairo.move_to(x1, y1)
-    game.cairo.line_to(x2, y1)
-    game.cairo.line_to(x2, y2)
-    game.cairo.line_to(x1, y2)
-    game.cairo.line_to(x1, y1)
+    draw_line_2x(game.drawimage, x0, y0, x1, y0, int(c*31.0))
+    draw_line_2x(game.drawimage, x1, y0, x1, y1, int(c*31.0))
+    draw_line_2x(game.drawimage, x1, y1, x0, y1, int(c*31.0))
+    draw_line_2x(game.drawimage, x0, y1, x0, y0, int(c*31.0))
 
-def circle3d(x, y, z, radius):
-    r = project_x(x+radius, y, z)-project_x(x, y, z)
-    if r < 1: return
-
-    x = project_x( x, y, z )
-    y = project_y( x, y, z )
-
-    game.cairo.move_to(x+r, y)
-    game.cairo.arc(x, y, r, 0, 2*math.pi)
+def circle3d(x, y, z, radius, c):
+    pass
 
 def draw_text (text, x, y, size):
-    game.cairo.set_font_size(size)
-    x_bearing, y_bearing, width, height = game.cairo.text_extents(text)[:4]
-
-    if x == -1: x = actual_screen_width/2
-    if y == -1: y = actual_screen_height/2
-
-    game.cairo.move_to(x - width/2 - x_bearing, y - height/2 - y_bearing)
-    game.cairo.show_text(text)
+    pass
 
 class Ball:
     def __init__(self):
@@ -150,10 +190,9 @@ class Ball:
         self.pos = Vector(to_fixed(50), to_fixed(25), to_fixed(desc['StageDepth'])/2)
         self.vel = Vector(to_fixed(2), to_fixed(2), self.speed)
 
-    def draw (self, stage):
+    def draw_3d (self, stage):
         # Draw the ball.
-        begin_prim(PRIM_FILL)
-        circle3d(self.pos.x, self.pos.y, self.pos.z, self.size)
+        circle3d(self.pos.x, self.pos.y, self.pos.z, self.size, game.brightness/100.0)
     
         # Draw the shadow.
         #DrawEllipse3D(Ball.pos.x, Stage.window.bottom, Ball.pos.z, self.size*2, self.size, (64, 64, 64))
@@ -370,19 +409,19 @@ class Paddle:
         # Game stuff
         self.score = 0
 
-    def draw (self, stage):
-        begin_prim(PRIM_LINE)
-    
+    def draw_3d (self, stage):
+        v = game.brightness/100.0
+
         r = Rect()
         r.left = self.pos.x - self.halfwidth 
         r.right = self.pos.x + self.halfwidth    
         r.top = self.pos.y - self.halfheight 
         r.bottom = self.pos.y + self.halfheight  
         
-        rect3d( r, self.pos.z )
+        rect3d( r, self.pos.z, v )
     
         x = r.left + ( ( r.right - r.left ) / 2 )
-        line3d( x, r.bottom, self.pos.z, x, stage.window.bottom, self.pos.z )
+        line3d( x, r.bottom, self.pos.z, x, stage.window.bottom, self.pos.z, v )
 
     def clip_position (self):
         self.pos.x = max(self.pos.x, self.halfwidth)
@@ -413,16 +452,16 @@ class Paddle:
         lastpos.x = self.pos.x
         lastpos.y = self.pos.y
         lastpos.z = self.pos.z
-    
+
         penx = game.mousex*100/actual_screen_width
         peny = game.mousey*100/actual_screen_height
         pendown = 1
-    
+
         if ( game.mousedown ):
             self.targetz = self.forwardz
         else:
             self.targetz = self.defaultz
-    
+
         # Snaps forward, eases back.
         if ( self.pos.z < self.targetz ):
             if ( self.delta.z < to_fixed(4) ):
@@ -430,10 +469,10 @@ class Paddle:
             self.pos.z += self.delta.z + to_fixed(2)
             if ( self.pos.z > self.targetz ):
                 self.pos.z = self.targetz
-    
+
         if ( self.pos.z > self.targetz ):
             self.pos.z += ( self.targetz - self.pos.z ) / 4
-    
+
         # Get the 2d position from the pen.
         if ( pendown ): 
             self.pos.x = to_fixed(penx)
@@ -526,52 +565,47 @@ class Stage:
         self.window.top = 0
         self.window.bottom = to_fixed(99)
 
-    def draw (self):
+    def draw_3d (self):
         window = self.window
 
-        begin_prim(PRIM_LINE)
-        v = 255*game.brightness/100.0
-        set_color(Color(v,v,v))
+        v = game.brightness/100.0
     
         # Near and far rectangles   
-        rect3d( window, 0 )
-        rect3d( window, self.depth )
+        rect3d( window, 0, v )
+        rect3d( window, self.depth, v )
     
         # Diagonals
-        line3d( window.left, window.top, 1, window.left, window.top, self.depth )
-        line3d( window.left, window.bottom, 1, window.left, window.bottom, self.depth )
-        line3d( window.right, window.top, 1, window.right, window.top, self.depth )
-        line3d( window.right, window.bottom, 1, window.right, window.bottom, self.depth )
+        line3d( window.left, window.top, 1, window.left, window.top, self.depth, v )
+        line3d( window.left, window.bottom, 1, window.left, window.bottom, self.depth, v )
+        line3d( window.right, window.top, 1, window.right, window.top, self.depth, v )
+        line3d( window.right, window.bottom, 1, window.right, window.bottom, self.depth, v )
 
         # Wall grids.
-        set_color(Color(64, 64, 64))
-    
+        v = game.brightness/4/100.0
+        
         i = 1
         while i < 5:
             x = i*(window.right-window.left)/5
             i += 1
-            line3d(x, window.top, 1, x, window.top, self.depth)
-            line3d(x, window.bottom, 1, x, window.bottom, self.depth)
-    
+            line3d(x, window.top, 1, x, window.top, self.depth, v)
+            line3d(x, window.bottom, 1, x, window.bottom, self.depth, v)
+        
         i = 1
         while i < 5:
             x = i*(window.bottom-window.top)/5
             i += 1
-            line3d(window.left, x, 1, window.left, x, self.depth)
-            line3d(window.right, x, 1, window.right, x, self.depth)
+            line3d(window.left, x, 1, window.left, x, self.depth, v)
+            line3d(window.right, x, 1, window.right, x, self.depth, v)
             
         i = 1
         while i < 5:
             x = i*(self.depth)/5
             i += 1
-            line3d(window.left, window.top, x, window.right, window.top, x)
-            line3d(window.left, window.bottom, x, window.right, window.bottom, x)
-            line3d(window.left, window.top, x, window.left, window.bottom, x)
-            line3d(window.right, window.top, x, window.right, window.bottom, x)
-
-        v = 255*game.brightness/100.0
-        set_color(Color(v,v,v))
-
+            line3d(window.left, window.top, x, window.right, window.top, x, v)
+            line3d(window.left, window.bottom, x, window.right, window.bottom, x, v)
+            line3d(window.left, window.top, x, window.left, window.bottom, x, v)
+            line3d(window.right, window.top, x, window.right, window.bottom, x, v)
+        
 class AI:
     def __init__(self):
         self.speed = 0
@@ -589,9 +623,11 @@ class IntroSequence:
     def leave (self):
         pass
 
-    def draw (self):
+    def draw_3d (self):
         if (self.timer1 == 1):
-            game.draw()
+            game.draw_3d()
+
+    def draw_cairo (self):
         set_color(Color(self.timer0/100.0*255.0, self.timer0/100.0*255.0, self.timer0/100.0*255.0))
         draw_text(_("3 d   p o n g"), -1, -1, 100)
 
@@ -616,8 +652,10 @@ class NewStageSequence:
     def leave (self):
         pass
 
-    def draw (self):
-        game.draw()
+    def draw_3d (self):
+        game.draw_3d()
+
+    def draw_cairo (self):
         set_color(Color(self.timer0/100.0*255.0, self.timer0/100.0*255.0, self.timer0/100.0*255.0))
         draw_text(game.stage_descs[game.curlevel]['Name'], -1, -1, 100)
 
@@ -643,8 +681,10 @@ class BallReleaseSequence:
     def leave (self):
         pass
 
-    def draw (self):
-        game.draw()
+    def draw_3d (self):
+        game.draw_3d()
+
+    def draw_cairo (self):
         v = math.sin(3.14159*self.timer0/30.0)
         set_color(Color(v*255.0, v*255.0, v*255.0))
         draw_text(str(3-self.timer1), -1, -1, 20)
@@ -668,8 +708,11 @@ class PlaySequence:
     def leave (self):
         pass
 
-    def draw (self):
-        game.draw()
+    def draw_3d (self):
+        game.draw_3d()
+
+    def draw_cairo (self):
+        pass
 
     def update (self):
         # Process player input and AI.
@@ -708,22 +751,23 @@ class ScoreSequence:
         #game.ball.vel = Vector(to_fixed(2), to_fixed(2), game.ball.vel.z)
         pass
 
-    def draw (self):
-        game.draw()
+    def draw_3d (self):
+        game.draw_3d()
 
         ring_spacing = to_fixed(1)
         ring_speed = to_fixed(1)
         num_rings = 10
 
-        b = 255*(1.0-float(self.step)/self.num_steps)
-        set_color(Color(b,b,b))
+        v = (1.0-float(self.step)/self.num_steps)
 
-        begin_prim(PRIM_LINE)
-        circle3d(game.ball.lastpos.x+game.ball.lastvel.x*self.step/2, game.ball.lastpos.y+game.ball.lastvel.y*self.step/2, game.ball.lastpos.z+game.ball.lastvel.z*self.step/2, game.ball.size)
+        circle3d(game.ball.lastpos.x+game.ball.lastvel.x*self.step/2, game.ball.lastpos.y+game.ball.lastvel.y*self.step/2, game.ball.lastpos.z+game.ball.lastvel.z*self.step/2, game.ball.size, v)
         random.seed(12345678)
         for ring in range(0, num_rings):
             b = 255*(1.0-float(self.step)/self.num_steps)*(0.5+0.5*math.cos(math.pi*float(ring)/num_rings))
-            circle3d(game.ball.lastpos.x+game.ball.lastvel.x*ring, game.ball.lastpos.y+game.ball.lastvel.y*ring, game.ball.lastpos.z+game.ball.lastvel.z*ring, (-ring+1)*ring_spacing + ring_speed*self.step)
+            circle3d(game.ball.lastpos.x+game.ball.lastvel.x*ring, game.ball.lastpos.y+game.ball.lastvel.y*ring, game.ball.lastpos.z+game.ball.lastvel.z*ring, (-ring+1)*ring_spacing + ring_speed*self.step, v)
+
+    def draw_cairo (self):
+        pass
 
     def update (self):
         self.step += 1
@@ -738,8 +782,10 @@ class LoseSequence:
     def leave (self):
         pass
 
-    def draw (self):
-        game.draw()
+    def draw_3d (self):
+        game.draw_3d()
+
+    def draw_cairo (self):
         set_color(Color(self.timer0/100.0, self.timer0/100.0, self.timer0/100.0))
         draw_text("; - {", -1, -1, 24)
 
@@ -785,7 +831,10 @@ class WinSequence:
                 self.timer0 = 0
                 self.timer1 = 0
 
-    def draw (self):
+    def draw_3d (self):
+        pass
+
+    def draw_cairo (self):
         starty = 250
         total_score = 0
         for i in range(0, len(game.stage_descs)):
@@ -843,8 +892,11 @@ class EditSequence:
     def leave (self):
         pass
 
-    def draw (self):
-        game.draw()
+    def draw_3d (self):
+        game.draw_3d()
+
+    def draw_cairo (self):
+        pass
 
     def update (self):
         pass
@@ -908,6 +960,7 @@ class Game:
         self.set_level(0)
 
     def draw_score(self, x, y, score, player):
+        return
         for j in range(0, 5):
             if j < score:
                 begin_prim(PRIM_FILL)
@@ -926,15 +979,13 @@ class Game:
                 game.cairo.move_to(px + 10, py)
                 game.cairo.arc(px, py, 10, 0, 2*math.pi)
 
-    def draw(self):
-        v = 255*self.brightness/100.0
-        set_color(Color(v,v,v))
+    def draw_3d(self):
+        self.stage.draw_3d()
+        self.paddle1.draw_3d(self.stage)
+        self.paddle2.draw_3d(self.stage)
+        self.ball.draw_3d(self.stage)
 
-        self.stage.draw()
-        self.paddle1.draw(self.stage)
-        self.paddle2.draw(self.stage)
-        self.ball.draw(self.stage)
-    
+    def draw_cairo (self):
         v = 255*self.brightness/100.0
         set_color(Color(v,v,v))
         self.draw_score(actual_screen_width*1/4-75, 30, self.paddle1.score, 1)
@@ -1157,18 +1208,19 @@ class PongActivity(activity.Activity):
 
         # Set up the drawing window and context.
         self.build_drawarea()
-        self.build_cairo()
 
         # Build the editor.
         self.editor = Editor()
         self.editor.activity = self
         self.editor.set_size_request(self.width, 80)
         self.drawarea.put(self.editor, 0, 0)
-        self.editor.hide_all()
 
         # Turn off double buffering.
         self.set_double_buffered(False)
         self.drawarea.set_double_buffered(False)
+
+        # Get the mainloop ready to run.
+        gobject.timeout_add(50, self.mainloop)
 
         # Initialize the game.
         game.new_game()
@@ -1176,11 +1228,9 @@ class PongActivity(activity.Activity):
         self.paused = False
         self.set_mode(PongActivity.MODE_GAME)
 
-        # Get the mainloop ready to run.
-        gobject.timeout_add(50, self.mainloop)
-
         # Show everything (except the editor).
         self.show_all()
+        self.editor.hide_all()
 
     def build_drawarea (self):
         self.drawarea = gtk.Layout()
@@ -1194,17 +1244,20 @@ class PongActivity(activity.Activity):
         self.drawarea.connect('button-press-event', self.on_mouse)
         self.drawarea.connect('button-release-event', self.on_mouse)
 
+        self.drawimage = gtk.gdk.Image(gtk.gdk.IMAGE_FASTEST, gtk.gdk.visual_get_system(), self.width, self.height)
+        game.drawimage = self.drawimage
+
         #self.drawarea.grab_add()
         self.cursor_visible = True
 
         self.set_canvas(self.drawarea)
 
-    def build_cairo (self):
-        game.cairosurf = cairo.ImageSurface(cairo.FORMAT_RGB24, self.width, self.height)
-        game.cairo = cairo.Context(game.cairosurf)
-        game.cairo.set_antialias(cairo.ANTIALIAS_NONE)
-        #game.cairo.set_line_cap(cairo.LINE_CAP_BUTT)
-        #game.cairo.set_line_width(1.0)
+#    def build_cairo (self):
+#        game.cairosurf = cairo.ImageSurface(cairo.FORMAT_RGB24, self.width, self.height)
+#        game.cairo = cairo.Context(game.cairosurf)
+#        game.cairo.set_antialias(cairo.ANTIALIAS_NONE)
+#        #game.cairo.set_line_cap(cairo.LINE_CAP_BUTT)
+#        #game.cairo.set_line_width(1.0)
 
     def build_toolbox (self):
         self.pausebtn = toolbutton.ToolButton('media-playback-pause')
@@ -1340,22 +1393,22 @@ class PongActivity(activity.Activity):
         actual_screen_height = self.drawarea.get_allocation()[3]
 
         # Clear the offscreen surface.
-        game.cairo.set_source_rgba(0, 0, 0)
-        game.cairo.rectangle(0, 0, self.width, self.height)
-        game.cairo.fill()
+        clear_image(self.drawimage)
+
+        # Set up cairo rendering.
+        game.cairo = self.drawarea.bin_window.cairo_create()
 
         # Render the current game state.
-        game.sequence.draw()
+        game.sequence.draw_3d()
+        game.sequence.draw_cairo()
         flush_prim()
 
-        # Draw offscreen surface to screen.
-        ctx = self.drawarea.bin_window.cairo_create()
-        ctx.set_source_surface(game.cairosurf, 0, 0)
-        ctx.rectangle(0, 0, self.width, self.height)
-        ctx.fill()
+        # Draw palette image.
+        gc = self.drawarea.get_style().fg_gc[gtk.STATE_NORMAL]
+        self.drawarea.bin_window.draw_image(gc, self.drawimage, 0, 0, 0, 0, -1, -1)
 
         # Hack to fix toolbox refresh.
-        self.tbox.queue_draw()
+        #self.tbox.queue_draw()
 
     # Game update methods
     def pause_game (self, p):
