@@ -155,7 +155,7 @@ def line3d(x0, y0, z0, x1, y1, z1, c):
         game.drawimage, 
         project_x(x0, y0, z0), project_y(x0, y0, z0), 
         project_x(x1, y1, z1), project_y(x1, y1, z1), 
-        int(c*31.0))
+        int(c*255.0))
 
 def rect3d(rect, depth, c):
     x0 = project_x(rect.left, rect.top, depth) + 1
@@ -163,10 +163,10 @@ def rect3d(rect, depth, c):
     x1 = project_x(rect.right, rect.bottom, depth) - 1
     y1 = project_y(rect.right, rect.bottom, depth) - 1
 
-    draw_line_2x(game.drawimage, x0, y0, x1, y0, int(c*31.0))
-    draw_line_2x(game.drawimage, x1, y0, x1, y1, int(c*31.0))
-    draw_line_2x(game.drawimage, x1, y1, x0, y1, int(c*31.0))
-    draw_line_2x(game.drawimage, x0, y1, x0, y0, int(c*31.0))
+    draw_line_2x(game.drawimage, x0, y0, x1, y0, int(c*255.0))
+    draw_line_2x(game.drawimage, x1, y0, x1, y1, int(c*255.0))
+    draw_line_2x(game.drawimage, x1, y1, x0, y1, int(c*255.0))
+    draw_line_2x(game.drawimage, x0, y1, x0, y0, int(c*255.0))
 
 def circle3d(x, y, z, radius, c):
     pass

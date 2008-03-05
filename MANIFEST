@@ -1,5 +1,7 @@
 pong.py
 setup.py
+pongc.py
+_pongc.so
 MANIFEST
 NEWS
 activity/3dpong.svg

@@ -26,7 +26,7 @@ float frac(float x)
 
 void draw_point_2x(GdkImage* img, int x, int y, uint16_t c)
 {
-	if (c>31) c=31;
+	c >>= 3;
 	unsigned short* pixels = (unsigned short*)img->mem;
 	int pitch = img->bpl/sizeof(unsigned short);
 	int ofs = pitch*y*2+x*2;
@@ -34,7 +34,7 @@ void draw_point_2x(GdkImage* img, int x, int y, uint16_t c)
 	pixels[ofs] = pix;
 	pixels[ofs+1] = pix;
 	pixels[ofs+pitch] = pix;
-	pixels[ofs+pitch*2+1] = pix;
+	pixels[ofs+pitch+1] = pix;
 }
 
 void clear_image(GdkImage* img)
@@ -92,7 +92,6 @@ void draw_line_2x(GdkImage* img, int x0, int y0, int x1, int y1, int color)
 	}
 	else if (dx == dy) // Diagonal line
 	{
-		return;
 		do 
 		{
 			x0 += xdir;
@@ -103,24 +102,24 @@ void draw_line_2x(GdkImage* img, int x0, int y0, int x1, int y1, int color)
 	else // Line is not horizontal, diagonal, or vertical.
 	{
 		// Initialize the line error accumulator to 0 
-		uint32_t ErrorAcc = 0;  
+		uint16_t ErrorAcc = 0;  
 		
 		// # of bits by which to shift ErrorAcc to get intensity level 
-		uint32_t IntensityShift = 16 - 5;
+		uint16_t IntensityShift = 16 - 8;
 		
 		// Mask used to flip all bits in an intensity weighting, producing the result (1 - intensity weighting) 
-		uint32_t WeightingComplementMask = 32 - 1;
+		uint16_t WeightingComplementMask = 256 - 1;
 		
 		// Is this an X-major or Y-major line?
 		if (dy > dx) 
 		{
 			// Y-major line; calculate 16-bit fixed-point fractional part of a pixel that X advances each time Y advances 
 			// 1 pixel, truncating the result so that we won't overrun the endpoint along the X axis
-			uint32_t ErrorAdj = ((unsigned long) dx << 16) / (unsigned long) dy;
+			uint16_t ErrorAdj = ((unsigned long) dx << 16) / (unsigned long) dy;
 			// Draw all pixels other than the first and last
 			while (--dy) 
 			{
-				uint32_t ErrorAccTemp = ErrorAcc;   /* remember currrent accumulated error */
+				uint16_t ErrorAccTemp = ErrorAcc;   /* remember currrent accumulated error */
 				ErrorAcc += ErrorAdj;      /* calculate error for next pixel */
 				if (ErrorAcc <= ErrorAccTemp) 
 				{
@@ -130,9 +129,10 @@ void draw_line_2x(GdkImage* img, int x0, int y0, int x1, int y1, int color)
 				y0++; // Y-major, so always advance Y
 				// The IntensityBits most significant bits of ErrorAcc give us the intensity weighting for this pixel, and the 
 				// complement of the weighting for the paired pixel
-				uint32_t Weighting = ErrorAcc >> IntensityShift;
-				draw_point_2x(img, x0, y0, color + Weighting);
-				draw_point_2x(img, x0 + xdir, y0, color + (Weighting ^ WeightingComplementMask));
+				uint16_t Weighting = ErrorAcc >> IntensityShift;
+				//draw_point_2x(img, x0, y0, (color * Weighting) >> 8);
+				//draw_point_2x(img, x0 + xdir, y0, (color * (Weighting ^ WeightingComplementMask)) >> 8);
+				draw_point_2x(img, x0, y0, color);
 			}
 			// Draw the final pixel, which is always exactly intersected by the line and so needs no weighting
 			draw_point_2x(img, x1, y1, color);
@@ -141,11 +141,11 @@ void draw_line_2x(GdkImage* img, int x0, int y0, int x1, int y1, int color)
 		{
 			// It's an X-major line; calculate 16-bit fixed-point fractional part of a pixel that Y advances each time X 
 			// advances 1 pixel, truncating the result to avoid overrunning the endpoint along the X axis
-			uint32_t ErrorAdj = ((unsigned long) dy << 16) / (unsigned long) dx;
+			uint16_t ErrorAdj = ((unsigned long) dy << 16) / (unsigned long) dx;
 			// Draw all pixels other than the first and last
 			while (--dx) 
 			{
-				uint32_t ErrorAccTemp = ErrorAcc;   // remember currrent accumulated error
+				uint16_t ErrorAccTemp = ErrorAcc;   // remember currrent accumulated error
 				ErrorAcc += ErrorAdj;      // calculate error for next pixel
 				if (ErrorAcc <= ErrorAccTemp) 
 				{
@@ -155,9 +155,10 @@ void draw_line_2x(GdkImage* img, int x0, int y0, int x1, int y1, int color)
 				x0 += xdir; // X-major, so always advance X 
 				// The IntensityBits most significant bits of ErrorAcc give us the intensity weighting for this pixel, and the 
 				// complement of the weighting for the paired pixel
-				uint32_t Weighting = ErrorAcc >> IntensityShift;
-				draw_point_2x(img, x0, y0, color + Weighting);
-				draw_point_2x(img, x0, y0 + 1, color + (Weighting ^ WeightingComplementMask));
+				uint16_t Weighting = ErrorAcc >> IntensityShift;
+				//draw_point_2x(img, x0, y0, (color * Weighting) >> 8);
+				//draw_point_2x(img, x0, y0 + 1, (color * (Weighting ^ WeightingComplementMask)) >> 8);
+				draw_point_2x(img, x0, y0, color);
 			}
 			// Draw the final pixel, which is always exactly intersected by the line and so needs no weighting
 			draw_point_2x(img, x1, y1, color);
