@@ -27,5 +27,8 @@ void clear_image(GdkImage* img);
 
 void draw_line_2x(GdkImage* img, int x0, int y0, int x1, int y1, int color);
 
+void draw_ellipse_2x(GdkImage* img, int x, int y, int rx, int ry, int color);
+void fill_ellipse_2x(GdkImage* img, int x, int y, int rx, int ry, int color);
+
 #endif
 
