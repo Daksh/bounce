@@ -848,7 +848,7 @@ class WinSequence:
             self.timer0 += 1                
             if self.timer0 >= 1000 or game.mousedown:
                 self.timer1 = 2
-                self.timer0 = len(game.stage_descs)*30
+                self.timer0 = (len(game.stage_descs)-1)*30
         elif (self.timer1 == 2):
             self.timer0 -= 1
             if (self.timer0 <= 0):
