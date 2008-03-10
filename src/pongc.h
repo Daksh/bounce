@@ -23,12 +23,25 @@
 // todo- Include the real GTK headers when installed.
 #include "gtk_types.h"
 
+// 2D primitives
 void clear_image(GdkImage* img);
 
 void draw_line_2x(GdkImage* img, int x0, int y0, int x1, int y1, int color);
 
 void draw_ellipse_2x(GdkImage* img, int x, int y, int rx, int ry, int color);
 void fill_ellipse_2x(GdkImage* img, int x, int y, int rx, int ry, int color);
+
+// 3D primitives
+void set_3d_params(int actual_screen_width, int actual_screen_height, int viewport_scale);
+
+int to_fixed(int x);
+int project_x(int x, int y, int z);
+int project_y(int x, int y, int z);
+void draw_line_3d(GdkImage* img, int x0, int y0, int z0, int x1, int y1, int z1, float c);
+void draw_rect_3d(GdkImage* img, int x0, int y0, int x1, int y1, int depth, float c);
+void draw_circle_3d(GdkImage* img, int x, int y, int z, int radius, float c);
+void fill_circle_3d(GdkImage* img, int x, int y, int z, int radius, float c);
+void draw_ellipse_3d(GdkImage* img, int x, int y, int z, int rx, int ry, float c);
 
 #endif
 

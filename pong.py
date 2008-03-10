@@ -11,7 +11,7 @@ default_stage_descs = [
     { 'Name': _('rotate'), 'StageDepth': 160, 'StageXGravity': 1, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 5, 'AIRecenter': 1, },
 ]
 
-import logging, os, time, math, threading, random, json
+import logging, os, time, math, threading, random, json, time
 
 from pongc import *
 
@@ -67,121 +67,10 @@ class Rect:
 # This game was ported from a Palm OS app, and it would be difficult to change all the internal calculations to a new resolution. 
 actual_screen_width = 1200
 actual_screen_height = 825
+viewport_scale = to_fixed(100)
 
 # Game constants
-viewport_scale = to_fixed(100)
 time_res = 32
-
-def project_x(x, y, z):
-    return (to_fixed(50) + ( x - to_fixed(50) ) * viewport_scale / ( z + viewport_scale )) * actual_screen_width/100 / 256
-
-def project_y(x, y, z):
-    return (to_fixed(50) + ( y - to_fixed(50) ) * viewport_scale / ( z + viewport_scale )) * actual_screen_height/100 / 256
-
-#PRIM_LINE = 0
-#PRIM_FILL = 1
-#
-#curprim = PRIM_LINE
-#
-#def flush_prim ():
-#    global curprim
-#    if curprim == PRIM_LINE:
-#        game.cairo.stroke()
-#    else:
-#        game.cairo.fill()
-#
-#def begin_prim (prim):
-#    global curprim
-#    if prim != curprim:
-#        flush_prim()
-#        curprim = prim
-#
-#def set_color (color):
-#    flush_prim()
-#    game.cairo.set_source_rgb(color.r/255.0, color.g/255.0, color.b/255.0)
-#
-#def line3d(x1, y1, z1, x2, y2, z2):
-#    game.cairo.move_to(project_x( x1, y1, z1 ), project_y( x1, y1, z1 ))
-#    game.cairo.line_to(project_x( x2, y2, z2 ), project_y( x2, y2, z2 ))
-#
-#def rect3d(rect, depth):
-#    x1 = project_x( rect.left, rect.top, depth ) + 1
-#    y1 = project_y( rect.left, rect.top, depth ) + 1
-#    x2 = project_x( rect.right, rect.bottom, depth ) - 1
-#    y2 = project_y( rect.right, rect.bottom, depth ) - 1
-#
-#    game.cairo.move_to(x1, y1)
-#    game.cairo.line_to(x2, y1)
-#    game.cairo.line_to(x2, y2)
-#    game.cairo.line_to(x1, y2)
-#    game.cairo.line_to(x1, y1)
-#
-#def circle3d(x, y, z, radius):
-#    r = project_x(x+radius, y, z)-project_x(x, y, z)
-#    if r < 1: return
-#
-#    x = project_x( x, y, z )
-#    y = project_y( x, y, z )
-#
-#    game.cairo.move_to(x+r, y)
-#    game.cairo.arc(x, y, r, 0, 2*math.pi)
-#
-#def draw_text (text, x, y, size):
-#    game.cairo.set_font_size(size)
-#    x_bearing, y_bearing, width, height = game.cairo.text_extents(text)[:4]
-#
-#    if x == -1: x = actual_screen_width/2
-#    if y == -1: y = actual_screen_height/2
-#
-#    game.cairo.move_to(x - width/2 - x_bearing, y - height/2 - y_bearing)
-#    game.cairo.show_text(text)
-
-def line3d(x0, y0, z0, x1, y1, z1, c):
-    x0 = project_x(x0, y0, z0)/2
-    y0 = project_y(x0, y0, z0)/2
-    x1 = project_x(x1, y1, z1)/2
-    y1 = project_y(x1, y1, z1)/2
-
-    draw_line_2x(game.drawimage, x0, y0, x1, y1, int(c*255.0)) 
-
-def rect3d(rect, depth, c):
-    x0 = (project_x(rect.left, rect.top, depth) + 1)/2
-    y0 = (project_y(rect.left, rect.top, depth) + 1)/2
-    x1 = (project_x(rect.right, rect.bottom, depth) - 1)/2
-    y1 = (project_y(rect.right, rect.bottom, depth) - 1)/2
-
-    draw_line_2x(game.drawimage, x0, y0, x1, y0, int(c*255.0))
-    draw_line_2x(game.drawimage, x1, y0, x1, y1, int(c*255.0))
-    draw_line_2x(game.drawimage, x1, y1, x0, y1, int(c*255.0))
-    draw_line_2x(game.drawimage, x0, y1, x0, y0, int(c*255.0))
-
-def draw_circle_3d(x, y, z, radius, c):
-    r = (project_x(x+radius, y, z)-project_x(x, y, z))/2
-    if r < 1: return
-
-    x = project_x(x, y, z)/2
-    y = project_y(x, y, z)/2
-
-    draw_ellipse_2x(game.drawimage, x, y, r, r, int(c*255.0))
-
-def fill_circle_3d(x, y, z, radius, c):
-    r = (project_x(x+radius, y, z)-project_x(x, y, z))/2
-    if r < 1: return
-
-    x = project_x(x, y, z)/2
-    y = project_y(x, y, z)/2
-
-    fill_ellipse_2x(game.drawimage, x, y, r, r, int(c*255.0))
-
-def draw_ellipse_3d(x, y, z, rx, ry, c):
-    rx = (project_x(x+rx, y, z)-project_x(x, y, z))/2
-    ry = (project_y(x, y+ry, z)-project_y(x, y, z))/2
-    if rx < 1 or ry < 1: return
-
-    x = project_x(x, y, z)/2
-    y = project_y(x, y, z)/2
-
-    draw_ellipse_2x(game.drawimage, x, y, rx, ry, int(c*255.0))
 
 def text_cairo (text, x, y, size, c):
     game.cairo.set_source_rgb(c, c, c)
@@ -213,13 +102,13 @@ class Ball:
 
     def draw_3d (self, stage):
         # Draw the ball.
-        fill_circle_3d(self.pos.x, self.pos.y, self.pos.z, self.size, game.brightness/100.0)
+        fill_circle_3d(game.drawimage, self.pos.x, self.pos.y, self.pos.z, self.size, game.brightness/100.0)
 
         # Draw the shadows.
-        draw_ellipse_3d(self.pos.x, stage.window.bottom, self.pos.z, self.size*2, self.size, game.brightness/2/100.0)
-        draw_ellipse_3d(self.pos.x, stage.window.top, self.pos.z, self.size*2, self.size, game.brightness/2/100.0)
-        draw_ellipse_3d(stage.window.left, self.pos.y, self.pos.z, self.size, self.size*2, game.brightness/2/100.0)
-        draw_ellipse_3d(stage.window.right, self.pos.y, self.pos.z, self.size, self.size*2, game.brightness/2/100.0)
+        draw_ellipse_3d(game.drawimage, self.pos.x, stage.window.bottom, self.pos.z, self.size*2, self.size, game.brightness/2/100.0)
+        draw_ellipse_3d(game.drawimage, self.pos.x, stage.window.top, self.pos.z, self.size*2, self.size, game.brightness/2/100.0)
+        draw_ellipse_3d(game.drawimage, stage.window.left, self.pos.y, self.pos.z, self.size, self.size*2, game.brightness/2/100.0)
+        draw_ellipse_3d(game.drawimage, stage.window.right, self.pos.y, self.pos.z, self.size, self.size*2, game.brightness/2/100.0)
 
     # 0 if nobody scored, 1 if Paddle1 scored, 2 if Paddle2 scored.
     def update (self, paddle1, paddle2, stage):
@@ -442,10 +331,10 @@ class Paddle:
         r.top = self.pos.y - self.halfheight 
         r.bottom = self.pos.y + self.halfheight  
         
-        rect3d( r, self.pos.z, v )
+        draw_rect_3d( game.drawimage, r.left, r.top, r.right, r.bottom, self.pos.z, v )
     
         x = r.left + ( ( r.right - r.left ) / 2 )
-        line3d( x, r.bottom, self.pos.z, x, stage.window.bottom, self.pos.z, v )
+        draw_line_3d( game.drawimage, x, r.bottom, self.pos.z, x, stage.window.bottom, self.pos.z, v )
 
     def clip_position (self):
         self.pos.x = max(self.pos.x, self.halfwidth)
@@ -592,18 +481,6 @@ class Stage:
     def draw_3d (self):
         window = self.window
 
-        v = game.brightness/100.0
-    
-        # Near and far rectangles   
-        rect3d( window, 0, v )
-        rect3d( window, self.depth, v )
-    
-        # Diagonals
-        line3d( window.left, window.top, 1, window.left, window.top, self.depth, v )
-        line3d( window.left, window.bottom, 1, window.left, window.bottom, self.depth, v )
-        line3d( window.right, window.top, 1, window.right, window.top, self.depth, v )
-        line3d( window.right, window.bottom, 1, window.right, window.bottom, self.depth, v )
-
         # Wall grids.
         v = game.brightness/4/100.0
         
@@ -611,25 +488,38 @@ class Stage:
         while i < 5:
             x = i*(window.right-window.left)/5
             i += 1
-            line3d(x, window.top, 1, x, window.top, self.depth, v)
-            line3d(x, window.bottom, 1, x, window.bottom, self.depth, v)
+            draw_line_3d(game.drawimage, x, window.top, 1, x, window.top, self.depth, v)
+            draw_line_3d(game.drawimage, x, window.bottom, 1, x, window.bottom, self.depth, v)
         
         i = 1
         while i < 5:
             x = i*(window.bottom-window.top)/5
             i += 1
-            line3d(window.left, x, 1, window.left, x, self.depth, v)
-            line3d(window.right, x, 1, window.right, x, self.depth, v)
+            draw_line_3d(game.drawimage, window.left, x, 1, window.left, x, self.depth, v)
+            draw_line_3d(game.drawimage, window.right, x, 1, window.right, x, self.depth, v)
             
         i = 1
         while i < 5:
             x = i*(self.depth)/5
             i += 1
-            line3d(window.left, window.top, x, window.right, window.top, x, v)
-            line3d(window.left, window.bottom, x, window.right, window.bottom, x, v)
-            line3d(window.left, window.top, x, window.left, window.bottom, x, v)
-            line3d(window.right, window.top, x, window.right, window.bottom, x, v)
-        
+            draw_line_3d(game.drawimage, window.left, window.top, x, window.right, window.top, x, v)
+            draw_line_3d(game.drawimage, window.left, window.bottom, x, window.right, window.bottom, x, v)
+            draw_line_3d(game.drawimage, window.left, window.top, x, window.left, window.bottom, x, v)
+            draw_line_3d(game.drawimage, window.right, window.top, x, window.right, window.bottom, x, v)
+
+        # The actual stage.
+        v = game.brightness/100.0
+    
+        # Near and far rectangles   
+        draw_rect_3d( game.drawimage, window.left, window.top, window.right, window.bottom, 0, v )
+        draw_rect_3d( game.drawimage, window.left, window.top, window.right, window.bottom, self.depth, v )
+    
+        # Diagonals
+        draw_line_3d( game.drawimage, window.left, window.top, 1, window.left, window.top, self.depth, v )
+        draw_line_3d( game.drawimage, window.left, window.bottom, 1, window.left, window.bottom, self.depth, v )
+        draw_line_3d( game.drawimage, window.right, window.top, 1, window.right, window.top, self.depth, v )
+        draw_line_3d( game.drawimage, window.right, window.bottom, 1, window.right, window.bottom, self.depth, v )
+
 class AI:
     def __init__(self):
         self.speed = 0
@@ -687,19 +577,25 @@ class NewStageSequence:
 
     def draw_cairo (self):
         game.draw_cairo()
-        text_cairo(game.stage_descs[self.nextlevel]['Name'], -1, -1, 100, self.timer0/100.0)
+        text_cairo(game.stage_descs[self.nextlevel]['Name'], -1, -1, 100, (100-game.brightness)/100.0)
 
     def update (self):
         if (self.timer1 == 0):
             if (game.brightness > 0): game.brightness -= 5
-            self.timer0 += 2
-            if (self.timer0 >= 100):
+            self.timer0 += 1
+            if (self.timer0 >= 20):
+                self.timer0 = 0
                 self.timer1 = 1
                 game.set_level(self.nextlevel)
         elif (self.timer1 == 1):
-            if (game.brightness < 100): game.brightness += 1
-            self.timer0 -= 2
-            if (self.timer0 <= 0):
+            self.timer0 += 1
+            if (self.timer0 >= 20):
+                self.timer0 = 0
+                self.timer1 = 2
+        elif (self.timer1 == 2):
+            if (game.brightness < 100): game.brightness += 5
+            self.timer0 += 1
+            if (self.timer0 >= 20):
                 #game.IntroWav.play()
                 game.set_sequence(BallReleaseSequence())
 
@@ -767,19 +663,19 @@ class ScoreSequence:
         pass
 
     def draw_3d (self):
-        game.draw_3d()
-
         ring_spacing = to_fixed(1)
         ring_speed = to_fixed(1)
         num_rings = 10
 
         v = (1.0-float(self.step)/self.num_steps)
 
-        fill_circle_3d(game.ball.lastpos.x+game.ball.lastvel.x*self.step/2, game.ball.lastpos.y+game.ball.lastvel.y*self.step/2, game.ball.lastpos.z+game.ball.lastvel.z*self.step/2, game.ball.size, v)
+        fill_circle_3d(game.drawimage, game.ball.lastpos.x+game.ball.lastvel.x*self.step/2, game.ball.lastpos.y+game.ball.lastvel.y*self.step/2, game.ball.lastpos.z+game.ball.lastvel.z*self.step/2, game.ball.size, v)
         random.seed(12345678)
         for ring in range(0, num_rings):
             b = (1.0-float(self.step)/self.num_steps)*(0.5+0.5*math.cos(math.pi*float(ring)/num_rings))
-            draw_circle_3d(game.ball.lastpos.x+game.ball.lastvel.x*ring, game.ball.lastpos.y+game.ball.lastvel.y*ring, game.ball.lastpos.z+game.ball.lastvel.z*ring, (-ring+1)*ring_spacing + ring_speed*self.step, b)
+            draw_circle_3d(game.drawimage, game.ball.lastpos.x+game.ball.lastvel.x*ring, game.ball.lastpos.y+game.ball.lastvel.y*ring, game.ball.lastpos.z+game.ball.lastvel.z*ring, (-ring+1)*ring_spacing + ring_speed*self.step, b)
+
+        game.draw_3d()
 
     def draw_cairo (self):
         game.draw_cairo()
@@ -868,8 +764,8 @@ class WinSequence:
         for i in range(0, len(game.stage_descs)):
             v = clamp(255*self.timer0/60.0 - i*60, 0, 255)/255.0
 
-            player_score = game.stage_descs[i]['PlayerScore']
-            ai_score = game.stage_descs[i]['AIScore']
+            player_score = game.stage_descs[i].get('PlayerScore', 0)
+            ai_score = game.stage_descs[i].get('AIScore', 0)
             diff_score = player_score - ai_score
 
             game.draw_score_cairo(250, starty + i*50, player_score, 1, v)
@@ -1018,6 +914,8 @@ class Game:
     
         #game.cairo.set_source_rgb(color[0]/255.0, color[1]/255.0, color[2]/255.0)
         #text_cairo(game.stage_descs[game.curlevel]['Name'], -1, 30, 24, v)
+
+        text_cairo("%.2f fps" % self.fps, 50, 30, 12, v)
 
 # Global game instance.
 game = Game()
@@ -1257,6 +1155,10 @@ class PongActivity(activity.Activity):
         self.show_all()
         self.editor.hide_all()
 
+        self.lastclock = time.time()
+        game.fps = 0.0
+        self.limitfps = 20.0 # 20fps is what the XO can currently handle.
+
     def build_drawarea (self):
         self.drawarea = gtk.Layout()
         self.drawarea.set_size_request(self.width, self.height)
@@ -1408,6 +1310,8 @@ class PongActivity(activity.Activity):
         actual_screen_width = self.drawarea.get_allocation()[2]
         actual_screen_height = self.drawarea.get_allocation()[3]
 
+        set_3d_params(actual_screen_width, actual_screen_height, viewport_scale)
+
         # Perform 3D rendering to the offscreen image and draw it to the screen.
         clear_image(self.drawimage)
         game.sequence.draw_3d()
@@ -1454,6 +1358,14 @@ class PongActivity(activity.Activity):
         # Update current game sequence and animate.
         game.sequence.update()
         self.drawarea.queue_draw()
+
+        # Limit framerate.
+        diff = float(time.time() - self.lastclock)
+        if diff > 0:
+            game.fps = 1.0 / diff
+        while time.time() - self.lastclock < 1.0/self.limitfps:
+            pass
+        self.lastclock = time.time()
 
         return True
 

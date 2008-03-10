@@ -351,3 +351,87 @@ void fill_ellipse_2x(GdkImage* img, int x, int y, int rx, int ry, int color)
 	}
 }
 
+int actual_screen_width = 1200;
+int actual_screen_height = 825;
+
+int viewport_scale = to_fixed(100);
+
+void set_3d_params(int w, int h, int s)
+{
+	actual_screen_width = w;
+	actual_screen_height = h;
+	viewport_scale = s;
+}
+
+int to_fixed(int x)
+{
+	return x<<8;
+}
+
+int project_x(int x, int y, int z)
+{
+    return (to_fixed(50) + ( x - to_fixed(50) ) * viewport_scale / ( z + viewport_scale )) * actual_screen_width/100 / 256;
+}
+
+int project_y(int x, int y, int z)
+{
+    return (to_fixed(50) + ( y - to_fixed(50) ) * viewport_scale / ( z + viewport_scale )) * actual_screen_height/100 / 256;
+}
+
+void draw_line_3d(GdkImage* img, int x0, int y0, int z0, int x1, int y1, int z1, float c)
+{
+    x0 = project_x(x0, y0, z0)/2;
+    y0 = project_y(x0, y0, z0)/2;
+    x1 = project_x(x1, y1, z1)/2;
+    y1 = project_y(x1, y1, z1)/2;
+
+    draw_line_2x(img, x0, y0, x1, y1, int(c*255.0));
+}
+
+void draw_rect_3d(GdkImage* img, int x0, int y0, int x1, int y1, int depth, float c)
+{
+    x0 = (project_x(x0, y0, depth) + 1)/2;
+    y0 = (project_y(x0, y0, depth) + 1)/2;
+    x1 = (project_x(x1, y1, depth) - 1)/2;
+    y1 = (project_y(x1, y1, depth) - 1)/2;
+
+    draw_line_2x(img, x0, y0, x1, y0, int(c*255.0));
+    draw_line_2x(img, x1, y0, x1, y1, int(c*255.0));
+    draw_line_2x(img, x1, y1, x0, y1, int(c*255.0));
+    draw_line_2x(img, x0, y1, x0, y0, int(c*255.0));
+}
+
+void draw_circle_3d(GdkImage* img, int x, int y, int z, int radius, float c)
+{
+    int r = (project_x(x+radius, y, z)-project_x(x, y, z))/2;
+    if (r < 1) return;
+
+    x = project_x(x, y, z)/2;
+    y = project_y(x, y, z)/2;
+
+    draw_ellipse_2x(img, x, y, r, r, int(c*255.0));
+}
+
+void fill_circle_3d(GdkImage* img, int x, int y, int z, int radius, float c)
+{
+    int r = (project_x(x+radius, y, z)-project_x(x, y, z))/2;
+	if (r < 1) return;
+
+    x = project_x(x, y, z)/2;
+    y = project_y(x, y, z)/2;
+
+    fill_ellipse_2x(img, x, y, r, r, int(c*255.0));
+}
+
+void draw_ellipse_3d(GdkImage* img, int x, int y, int z, int rx, int ry, float c)
+{
+    rx = (project_x(x+rx, y, z)-project_x(x, y, z))/2;
+    ry = (project_y(x, y+ry, z)-project_y(x, y, z))/2;
+    if (rx < 1 || ry < 1) return;
+
+    x = project_x(x, y, z)/2;
+    y = project_y(x, y, z)/2;
+
+    draw_ellipse_2x(img, x, y, rx, ry, int(c*255.0));
+}
+
