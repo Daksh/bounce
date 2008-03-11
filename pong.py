@@ -20,6 +20,7 @@ gobject.threads_init()
 
 from sugar.activity import activity
 from sugar.graphics import *
+from sugar.graphics import alert
 from sugar.graphics import toggletoolbutton
 from sugar.graphics import icon
 
@@ -646,9 +647,9 @@ class PlaySequence:
 
         # Run the ball simulation.
         score = game.ball.update(game.paddle1, game.paddle2, game.stage)
-        if game.mousedown:
-            score = 1
-            game.paddle1.score += 1
+        #if game.mousedown:
+        #    score = 1
+        #    game.paddle1.score += 1
         if score == 1 or score == 2:
             game.set_sequence(ScoreSequence())
 
@@ -826,6 +827,27 @@ class EditSequence:
     def update (self):
         pass
 
+class TestSequence:
+    def enter (self):
+        game.brightness = 100
+
+    def leave (self):
+        pass
+
+    def draw_3d (self):
+        game.draw_3d()
+
+    def draw_cairo (self):
+        pass
+
+    def update (self):
+        # Process player input and AI.
+        game.paddle1.update_player(game.stage)
+        game.paddle2.update_ai(game.ball, game.stage)
+
+        # Run the ball simulation.
+        game.ball.update(game.paddle1, game.paddle2, game.stage)
+
 class Game:
     def __init__(self):
         self.endtimeout = 0
@@ -915,7 +937,7 @@ class Game:
         #game.cairo.set_source_rgb(color[0]/255.0, color[1]/255.0, color[2]/255.0)
         #text_cairo(game.stage_descs[game.curlevel]['Name'], -1, 30, 24, v)
 
-        text_cairo("%.2f fps" % self.fps, 50, 30, 12, v)
+        text_cairo("%.2f fps" % self.fps, 50, 30, 12, 1.0)
 
 # Global game instance.
 game = Game()
@@ -1149,7 +1171,7 @@ class PongActivity(activity.Activity):
         game.new_game()
 
         self.paused = False
-        self.set_mode(PongActivity.MODE_GAME)
+        self.mode = PongActivity.MODE_GAME
 
         # Show everything (except the editor).
         self.show_all()
@@ -1176,7 +1198,7 @@ class PongActivity(activity.Activity):
 
         self.set_canvas(self.drawarea)
 
-    def build_toolbox (self):
+    def build_gamebox (self):
         self.pausebtn = toolbutton.ToolButton('media-playback-pause')
         self.pausebtn.set_tooltip(_("Pause Game"))
         self.pausebtn.connect('clicked', self.on_game_pause)
@@ -1186,15 +1208,25 @@ class PongActivity(activity.Activity):
         self.clearscoresbtn = toolbutton.ToolButton('list-remove')
         self.clearscoresbtn.set_tooltip(_("Reset Scores"))
 
-        self.gamesep = gtk.SeparatorToolItem()
-        self.gamesep.set_expand(True)
-        self.gamesep.set_draw(False)
+        sep = gtk.SeparatorToolItem()
+        sep.set_expand(True)
+        sep.set_draw(False)
 
-        gamebox = gtk.Toolbar()
-        gamebox.insert(self.pausebtn, -1)
-        gamebox.insert(self.gamesep, -1)
-        gamebox.insert(self.showscoresbtn, -1)
-        gamebox.insert(self.clearscoresbtn, -1)
+        self.editbtn = toolbutton.ToolButton('dialog-ok')
+        self.editbtn.set_tooltip(_("Edit"))
+        self.editbtn.connect('clicked', self.on_edit)
+
+        self.gamebox = gtk.Toolbar()
+        self.gamebox.insert(self.pausebtn, -1)
+        self.gamebox.insert(self.showscoresbtn, -1)
+        self.gamebox.insert(self.clearscoresbtn, -1)
+        self.gamebox.insert(sep, -1)
+        self.gamebox.insert(self.editbtn, -1)
+
+    def build_editbox (self):
+        self.testbtn = toggletoolbutton.ToggleToolButton('zoom-in')
+        self.testbtn.set_tooltip(_("Test"))
+        self.testbtn.connect('clicked', self.on_edit_test)
 
         self.prevstagebtn = toolbutton.ToolButton('go-left')
         self.prevstagebtn.set_tooltip(_("Previous Stage"))
@@ -1204,10 +1236,6 @@ class PongActivity(activity.Activity):
         self.nextstagebtn.set_tooltip(_("Next Stage"))
         self.nextstagebtn.connect('clicked', self.on_edit_nextstage)
 
-        self.editsep = gtk.SeparatorToolItem()
-        self.editsep.set_expand(True)
-        self.editsep.set_draw(False)
-
         self.deletestagebtn = toolbutton.ToolButton('list-remove')
         self.deletestagebtn.set_tooltip(_("Delete Stage"))
         self.deletestagebtn.connect('clicked', self.on_edit_deletestage)
@@ -1216,19 +1244,29 @@ class PongActivity(activity.Activity):
         self.addstagebtn.set_tooltip(_("Add New Stage"))
         self.addstagebtn.connect('clicked', self.on_edit_addstage)
 
-        editbox = gtk.Toolbar()
-        editbox.insert(self.prevstagebtn, -1)
-        editbox.insert(self.nextstagebtn, -1)
-        editbox.insert(self.editsep, -1)
-        editbox.insert(self.deletestagebtn, -1)
-        editbox.insert(self.addstagebtn, -1)
+        sep = gtk.SeparatorToolItem()
+        sep.set_expand(True)
+        sep.set_draw(False)
+
+        self.gamebtn = toolbutton.ToolButton('dialog-ok')
+        self.gamebtn.set_tooltip(_("Play"))
+        self.gamebtn.connect('clicked', self.on_game)
+
+        self.editbox = gtk.Toolbar()
+        self.editbox.insert(self.testbtn, -1)
+        self.editbox.insert(self.prevstagebtn, -1)
+        self.editbox.insert(self.nextstagebtn, -1)
+        self.editbox.insert(self.deletestagebtn, -1)
+        self.editbox.insert(self.addstagebtn, -1)
+        self.editbox.insert(sep, -1)
+        self.editbox.insert(self.gamebtn, -1)
+
+    def build_toolbox (self):
+        self.build_gamebox()
 
         self.tbox = activity.ActivityToolbox(self)
-        self.tbox.add_toolbar(_("Game"), gamebox)
-        self.tbox.add_toolbar(_("Edit"), editbox)
+        self.tbox.add_toolbar(_("Game"), self.gamebox)
         self.tbox.show_all()
-
-        self.tbox.connect('current-toolbar-changed', self.on_toolbox_changed)
 
         self.set_toolbox(self.tbox)
 
@@ -1237,27 +1275,48 @@ class PongActivity(activity.Activity):
         self.mode = mode
 
         if self.mode == PongActivity.MODE_GAME:
+            self.tbox.remove_toolbar(1)
+            self.build_gamebox()
+            self.tbox.add_toolbar(_("Game"), self.gamebox)
+            self.gamebox.show_all()
+            self.tbox.set_current_toolbar(1)
+
+            self.pause_game(False)
+
             self.editor.hide_all()
-            game.set_sequence(PlaySequence())
-
-        if self.mode == PongActivity.MODE_EDIT:
-            self.pause_game(True)
-
-            game.set_sequence(EditSequence())
-
-            self.editor.copy_from_desc(game.stage_descs[game.curlevel])
-            self.editor.show_all()
-
+            game.set_sequence(IntroSequence())
             self.queue_draw()
 
-    def on_toolbox_changed (self, toolbar, idx):
-        bar = self.tbox.get_current_toolbar()
-        if bar == 0: # Activity
-            self.set_mode(PongActivity.MODE_GAME)
-        elif bar == 1: # Game
-            self.set_mode(PongActivity.MODE_GAME)
-        elif bar == 2: # Edit
+        if self.mode == PongActivity.MODE_EDIT:
+            self.tbox.remove_toolbar(1)
+            self.build_editbox()
+            self.tbox.add_toolbar(_("Edit"), self.editbox)
+            self.editbox.show_all()
+            self.tbox.set_current_toolbar(1)
+            self.editor.copy_from_desc(game.stage_descs[game.curlevel])
+
+            game.set_level(game.curlevel)
+            self.pause_game(True)
+
+            self.editor.show_all()
+            game.set_sequence(EditSequence())
+            self.queue_draw()
+
+    def on_edit (self, button):
+        msg = alert.ConfirmationAlert()
+        msg.props.title = _('Change to Edit Mode?')
+        msg.props.msg = _('If you change to edit mode, this game\'s scores will be cleared.')
+        self.add_alert(msg)
+        msg.connect('response', self.on_edit_confirm)
+        msg.show_all()
+
+    def on_edit_confirm(self, alert, response_id):
+        self.remove_alert(alert)
+        if response_id is gtk.RESPONSE_OK:
             self.set_mode(PongActivity.MODE_EDIT)
+
+    def on_game (self, button):
+        self.set_mode(PongActivity.MODE_GAME)
 
     # Game toolbar
     def on_game_pause (self, button):
@@ -1270,6 +1329,17 @@ class PongActivity(activity.Activity):
         log.debug("on_game_clearscores not implemented");
 
     # Edit toolbar
+    def on_edit_test (self, button):
+        if button.get_active():
+            game.set_sequence(TestSequence())
+            self.pause_game(False)
+            self.queue_draw()
+        else:
+            self.pause_game(True)
+            game.set_level(game.curlevel)
+            game.set_sequence(EditSequence())
+            self.queue_draw()
+
     def on_edit_prevstage (self, button):
         if game.curlevel > 0:
             game.set_level(game.curlevel-1)
