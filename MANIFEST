@@ -1,8 +1,13 @@
-pong.py
+bounce.py
 setup.py
 pongc.py
 _pongc.so
 MANIFEST
 NEWS
-activity/3dpong.svg
+activity/bounce.svg
 activity/activity.info
+sound/intro.wav
+sound/player1paddle.wav
+sound/player2paddle.wav
+sound/score.wav
+sound/wall.wav

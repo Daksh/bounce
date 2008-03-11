@@ -1,9 +1,18 @@
+Bounce-4
+- Renamed from 3dpong to Bounce.
+
+3dpong-3
+- Added level editor.
+- Added journal integration.
+- Optimized for decent performance on XO.
+- Bug fixes.
+
 3dpong-2
 
-* Rewrote without PyGame, using plain PyGtk and Cairo.
-* Minor display improvements.
-* Sound currently broken.
+- Rewrote without PyGame, using plain PyGtk and Cairo.
+- Minor display improvements.
+- Sound currently broken.
 
 3dpong-1
 
-* Initial release.
+- Initial release.

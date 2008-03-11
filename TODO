@@ -1,0 +1,11 @@
+General TODO:
++ Finish reimplementing sounds using GStreamer or ALSA.
++ Add score recording.
++ Add scrolling score history screen.
++ Optimize framerate.
+  + Remove Cairo in score display.
+  + Double buffer only when text is visible onscreen.
++ Release Bounce v4.
++ Add video paddle (v5).
++ Add multiplayer (v5).
+

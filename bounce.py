@@ -1,14 +1,15 @@
 #!/usr/bin/env python
-"""3DPong - 3D action game by Wade Brainerd."""
+"""Bounce - 3D action game by Wade Brainerd <wadetb@gmail.com>."""
 
 from gettext import gettext as _
 
+# This section can be modified to change the default stages that are built into the activity.
 default_stage_descs = [
-    { 'Name': _('normal'), 'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, },
-    { 'Name': _('bounce'), 'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 2, 'AIRecenter': 1, },
-    { 'Name': _('wide'),   'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  4, 'PaddleWidth': 50, 'PaddleHeight': 15, 'AISpeed': 4, 'AIRecenter': 1, },
-    { 'Name': _('deep'),   'StageDepth': 500, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25, 'AISpeed': 5, 'AIRecenter': 0, },
-    { 'Name': _('rotate'), 'StageDepth': 160, 'StageXGravity': 1, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 5, 'AIRecenter': 1, },
+    { 'Name': _('practice'), 'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, },
+    { 'Name': _('gravity'),  'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 2, 'AIRecenter': 1, },
+    { 'Name': _('wide'),     'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  4, 'PaddleWidth': 50, 'PaddleHeight': 15, 'AISpeed': 4, 'AIRecenter': 1, },
+    { 'Name': _('deep'),     'StageDepth': 500, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25, 'AISpeed': 5, 'AIRecenter': 0, },
+    { 'Name': _('rotate'),   'StageDepth': 160, 'StageXGravity': 1, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 5, 'AIRecenter': 1, },
 ]
 
 import logging, os, time, math, threading, random, json, time
@@ -18,13 +19,16 @@ from pongc import *
 import gobject, pygtk, gtk, pango, cairo
 gobject.threads_init()  
 
+# Import GStreamer (for sound output).
+import pygst, gst
+
 from sugar.activity import activity
 from sugar.graphics import *
 from sugar.graphics import alert
 from sugar.graphics import toggletoolbutton
 from sugar.graphics import icon
 
-log = logging.getLogger('3dpong')
+log = logging.getLogger('bounce')
 log.setLevel(logging.DEBUG)
 logging.basicConfig()
 gtk.add_log_handlers()
@@ -63,6 +67,29 @@ class Rect:
         self.left = 0
         self.right = 0
         self.bottom = 0
+
+class Sound:
+    def __init__ (self, name):
+        self.player = gst.element_factory_make("playbin", "player")
+        self.fakesink = gst.element_factory_make('fakesink', "my-fakesink")
+        self.player.set_property("video-sink", self.fakesink)
+        self.bus = self.player.get_bus()
+        self.bus.add_signal_watch()
+        self.bus.connect('message', self.on_gst_message)
+        self.player.set_property('uri', "file://"+activity.get_bundle_path()+"/"+name)
+        #self.player.set_state(gst.STATE_PAUSED)
+
+    def on_gst_message(self, bus, message):
+        t = message.type
+        if t == gst.MESSAGE_EOS:
+            self.player.set_state(gst.STATE_NULL)
+        elif t == gst.MESSAGE_ERROR:
+            self.player.set_state(gst.STATE_NULL)
+            raise "GST error! %s" % message 
+
+    def play (self):
+        pass
+        #self.player.set_state(gst.STATE_PLAYING)
 
 # Virtual screen dimensions
 # This game was ported from a Palm OS app, and it would be difficult to change all the internal calculations to a new resolution. 
@@ -290,14 +317,16 @@ class Ball:
         # Calculate scores if any collisions with the back wall happened.
         if collision_type == 1:
             paddle1.score += 1
+            game.scoresnd.play()
         elif collision_type == 2:
             paddle2.score += 1  
-        #elif collision_type == 3:
-        #    game.Player1PaddleWav.play()    
-        #elif collision_type == 4:
-        #    game.Player2PaddleWav.play()    
-        #elif collision_type == 5:
-        #    game.WallWav.play() 
+            game.scoresnd.play()
+        elif collision_type == 3:
+            game.paddle1snd.play()
+        elif collision_type == 4:
+            game.paddle2snd.play()
+        elif collision_type == 5:
+            game.wallsnd.play()
 
         return collision_type
 
@@ -545,7 +574,7 @@ class IntroSequence:
     def draw_cairo (self):
         if (self.timer1 == 1):
             game.draw_cairo()
-        text_cairo(_("3 d   p o n g"), -1, -1, 100, self.timer0/100.0)
+        text_cairo(_("b o u n c e"), -1, -1, 100, self.timer0/100.0)
 
     def update (self):
         if (self.timer1 == 0):
@@ -557,7 +586,7 @@ class IntroSequence:
             if (game.brightness < 100): game.brightness += 1
             self.timer0 -= 2
             if (self.timer0 <= 0):
-                #game.IntroWav.play()
+                game.introsnd.play()
                 game.set_sequence(BallReleaseSequence())
 
 class NewStageSequence:
@@ -597,7 +626,7 @@ class NewStageSequence:
             if (game.brightness < 100): game.brightness += 5
             self.timer0 += 1
             if (self.timer0 >= 20):
-                #game.IntroWav.play()
+                game.introsnd.play()
                 game.set_sequence(BallReleaseSequence())
 
 class BallReleaseSequence:
@@ -881,6 +910,14 @@ class Game:
         # The 'X' shape used as an icon.
         self.xpoints = [ (0,0), (0.3,0), (0.5,0.3), (0.7,0), (1,0), (0.7,0.5), (1,1), (0.7,1), (0.5,0.6), (0.3,1), (0,1), (0.3,0.5) ]
 
+        # Create sounds.
+        self.scoresnd = Sound('sound/player1paddle.wav')
+        self.paddle1snd = Sound('sound/player1paddle.wav')
+        self.paddle1snd = Sound('sound/player1paddle.wav')
+        self.paddle2snd = Sound('sound/player2paddle.wav')
+        self.wallsnd = Sound('sound/wall.wav')
+        self.introsnd = Sound('sound/intro.wav')
+
     def set_sequence (self, seq):
         self.sequence.leave()
         self.sequence = seq
@@ -966,7 +1003,6 @@ class Editor(gtk.Layout):
 
         self.prevbtn = gtk.Button()
         self.prevbtn.add(icon.Icon(icon_name='go-left'))
-        #self.prevbtn.set_tooltip(_("Previous"))
         self.prevbtn.connect('clicked', self.on_prev)
 
         self.nextbtn = gtk.Button()
@@ -1134,14 +1170,18 @@ class Editor(gtk.Layout):
 
         self.propbox.show_all()
 
-class PongActivity(activity.Activity):
+class BounceActivity(activity.Activity):
 
     MODE_GAME = 0
     MODE_EDIT = 1
 
     def __init__ (self, handle):
         activity.Activity.__init__(self, handle)
-        self.set_title(_("3dpong"))
+        self.set_title(_("Bounce"))
+
+        # Set up the global activity instance.
+        global ACTIVITY
+        ACTIVITY = self
 
         # Get activity size. 
         # todo- What we really need is the size of the canvasarea, not including the toolbox.
@@ -1171,15 +1211,19 @@ class PongActivity(activity.Activity):
         game.new_game()
 
         self.paused = False
-        self.mode = PongActivity.MODE_GAME
+        self.mode = BounceActivity.MODE_GAME
 
         # Show everything (except the editor).
         self.show_all()
         self.editor.hide_all()
 
+        # Initialize the FPS counter.
         self.lastclock = time.time()
         game.fps = 0.0
         self.limitfps = 20.0 # 20fps is what the XO can currently handle.
+
+        # Initialize sound playback.
+        self.init_sound()
 
     def build_drawarea (self):
         self.drawarea = gtk.Layout()
@@ -1270,11 +1314,32 @@ class PongActivity(activity.Activity):
 
         self.set_toolbox(self.tbox)
 
+    def init_sound (self):
+        self.player = gst.element_factory_make("playbin", "player")
+        fakesink = gst.element_factory_make('fakesink', "my-fakesink")
+        self.player.set_property("video-sink", fakesink)
+        bus = self.player.get_bus()
+        bus.add_signal_watch()
+        bus.connect('message', self.on_gst_message)
+        self.player.set_property('uri', "file://"+activity.get_bundle_path()+"/"+'sound/wall.wav')
+
+    def on_gst_message(self, bus, message):
+        t = message.type
+        if t == gst.MESSAGE_EOS:
+            self.player.set_state(gst.STATE_NULL)
+        elif t == gst.MESSAGE_ERROR:
+            self.player.set_state(gst.STATE_NULL)
+            raise "GST error! %s" % message 
+
+    def play_sound (self, name):
+        #self.player.set_property('uri', "file://"+activity.get_bundle_path()+"/"+name)
+        self.player.set_state(gst.STATE_PLAYING)
+
     # Activity modes
     def set_mode (self, mode):
         self.mode = mode
 
-        if self.mode == PongActivity.MODE_GAME:
+        if self.mode == BounceActivity.MODE_GAME:
             self.tbox.remove_toolbar(1)
             self.build_gamebox()
             self.tbox.add_toolbar(_("Game"), self.gamebox)
@@ -1287,7 +1352,7 @@ class PongActivity(activity.Activity):
             game.set_sequence(IntroSequence())
             self.queue_draw()
 
-        if self.mode == PongActivity.MODE_EDIT:
+        if self.mode == BounceActivity.MODE_EDIT:
             self.tbox.remove_toolbar(1)
             self.build_editbox()
             self.tbox.add_toolbar(_("Edit"), self.editbox)
@@ -1313,10 +1378,10 @@ class PongActivity(activity.Activity):
     def on_edit_confirm(self, alert, response_id):
         self.remove_alert(alert)
         if response_id is gtk.RESPONSE_OK:
-            self.set_mode(PongActivity.MODE_EDIT)
+            self.set_mode(BounceActivity.MODE_EDIT)
 
     def on_game (self, button):
-        self.set_mode(PongActivity.MODE_GAME)
+        self.set_mode(BounceActivity.MODE_GAME)
 
     # Game toolbar
     def on_game_pause (self, button):
@@ -1467,10 +1532,10 @@ class PongActivity(activity.Activity):
 
             # Restore activity state.
             game.set_level(storage.get('curlevel', 0))
-            self.set_mode(storage.get('mode', PongActivity.MODE_GAME))
+            self.set_mode(storage.get('mode', BounceActivity.MODE_GAME))
 
             # Switch to editor toolbox if in edit mode.
-            if self.mode == PongActivity.MODE_EDIT:
+            if self.mode == BounceActivity.MODE_EDIT:
                 self.tbox.set_current_toolbar(2)
 
             # Game always restores paused.
