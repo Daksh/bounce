@@ -2,6 +2,7 @@ bounce.py
 setup.py
 pongc.py
 _pongc.so
+alsaaudio.so
 MANIFEST
 NEWS
 activity/bounce.svg

@@ -6,10 +6,10 @@ from gettext import gettext as _
 # This section can be modified to change the default stages that are built into the activity.
 default_stage_descs = [
     { 'Name': _('practice'), 'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, },
-    { 'Name': _('gravity'),  'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 2, 'AIRecenter': 1, },
-    { 'Name': _('wide'),     'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  4, 'PaddleWidth': 50, 'PaddleHeight': 15, 'AISpeed': 4, 'AIRecenter': 1, },
-    { 'Name': _('deep'),     'StageDepth': 500, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25, 'AISpeed': 5, 'AIRecenter': 0, },
-    { 'Name': _('rotate'),   'StageDepth': 160, 'StageXGravity': 1, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 5, 'AIRecenter': 1, },
+#    { 'Name': _('gravity'),  'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 2, 'AIRecenter': 1, },
+#    { 'Name': _('wide'),     'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  4, 'PaddleWidth': 50, 'PaddleHeight': 15, 'AISpeed': 4, 'AIRecenter': 1, },
+#    { 'Name': _('deep'),     'StageDepth': 500, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25, 'AISpeed': 5, 'AIRecenter': 0, },
+#    { 'Name': _('rotate'),   'StageDepth': 160, 'StageXGravity': 1, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 5, 'AIRecenter': 1, },
 ]
 
 import logging, os, time, math, threading, random, json, time
@@ -22,11 +22,16 @@ gobject.threads_init()
 # Import GStreamer (for sound output).
 import pygst, gst
 
+# Import alsaaudio.
+#import alsaaudio
+
 from sugar.activity import activity
 from sugar.graphics import *
 from sugar.graphics import alert
 from sugar.graphics import toggletoolbutton
 from sugar.graphics import icon
+
+from sugar.presence import presenceservice
 
 log = logging.getLogger('bounce')
 log.setLevel(logging.DEBUG)
@@ -68,7 +73,9 @@ class Rect:
         self.right = 0
         self.bottom = 0
 
-class Sound:
+# This works, but there is a 1-2 second delay before the sound actually starts playing.
+# Need to buffer the audio into memory somehow.
+class GSTSound:
     def __init__ (self, name):
         self.player = gst.element_factory_make("playbin", "player")
         self.fakesink = gst.element_factory_make('fakesink', "my-fakesink")
@@ -77,7 +84,6 @@ class Sound:
         self.bus.add_signal_watch()
         self.bus.connect('message', self.on_gst_message)
         self.player.set_property('uri', "file://"+activity.get_bundle_path()+"/"+name)
-        #self.player.set_state(gst.STATE_PAUSED)
 
     def on_gst_message(self, bus, message):
         t = message.type
@@ -88,13 +94,31 @@ class Sound:
             raise "GST error! %s" % message 
 
     def play (self):
+        self.player.set_state(gst.STATE_PLAYING)
+
+# Does not currently work (can only have one PCM object perhaps?).
+class Sound:
+    def __init__ (self, name):
         pass
-        #self.player.set_state(gst.STATE_PLAYING)
+        #self.out = alsaaudio.PCM(alsaaudio.PCM_PLAYBACK)
+        #self.out.setchannels(1)
+        #self.out.setrate(8000)
+        #self.out.setformat(alsaaudio.PCM_FORMAT_S16_LE)
+        #self.out.setperiodsize(160)
+
+        #fd = open(activity.get_bundle_path()+'/'+name, 'r')
+        #try:
+        #    self.data = fd.read(320)
+        #finally:
+        #    fd.close()
+
+    def play (self):
+        pass
+        #self.out.write(self.data)
 
 # Virtual screen dimensions
-# This game was ported from a Palm OS app, and it would be difficult to change all the internal calculations to a new resolution. 
-actual_screen_width = 1200
-actual_screen_height = 825
+screen_width = 1200
+screen_height = 825
 viewport_scale = to_fixed(100)
 
 # Game constants
@@ -106,8 +130,8 @@ def text_cairo (text, x, y, size, c):
     game.cairo.set_font_size(size)
     x_bearing, y_bearing, width, height = game.cairo.text_extents(text)[:4]
     
-    if x == -1: x = actual_screen_width/2
-    if y == -1: y = actual_screen_height/2
+    if x == -1: x = screen_width/2
+    if y == -1: y = screen_height/2
 
     game.cairo.move_to(x - width/2 - x_bearing, y - height/2 - y_bearing)
     game.cairo.show_text(text)
@@ -396,8 +420,8 @@ class Paddle:
         lastpos.y = self.pos.y
         lastpos.z = self.pos.z
 
-        penx = game.mousex*100/actual_screen_width
-        peny = game.mousey*100/actual_screen_height
+        penx = game.mousex*100/screen_width
+        peny = game.mousey*100/screen_height
         pendown = 1
 
         if ( game.mousedown ):
@@ -714,8 +738,8 @@ class ScoreSequence:
         self.step += 1
         if self.step >= self.num_steps:
             # Record the scores.
-            game.stage_descs[game.curlevel]['PlayerScore'] = game.paddle1.score
-            game.stage_descs[game.curlevel]['AIScore'] = game.paddle2.score
+            game.stage_descs[game.curlevel]['Paddle1Score'] = game.paddle1.score
+            game.stage_descs[game.curlevel]['Paddle2Score'] = game.paddle2.score
             # Win, Lose or Keep Playing.
             if game.paddle1.score == 5:
                 if (game.curlevel == len(game.stage_descs)-1):
@@ -758,6 +782,16 @@ class LoseSequence:
 
 class WinSequence:
     def enter (self):
+        # Create a new score history entry.
+        paddle1_score = 0
+        paddle2_score = 0
+        for i in range(0, len(game.stage_descs)):
+            paddle1_score += game.stage_descs[i].get('Paddle1Score', 0)
+            paddle2_score += game.stage_descs[i].get('Paddle2Score', 0)
+
+        game.scores.append({'Player1Name':game.player1.props.nick, 'Player1Score':paddle1_score,
+                            'Player2Name':game.player2.props.nick, 'Player2Score':paddle2_score})
+
         self.timer0 = 0
         self.timer1 = 0
 
@@ -794,8 +828,8 @@ class WinSequence:
         for i in range(0, len(game.stage_descs)):
             v = clamp(255*self.timer0/60.0 - i*60, 0, 255)/255.0
 
-            player_score = game.stage_descs[i].get('PlayerScore', 0)
-            ai_score = game.stage_descs[i].get('AIScore', 0)
+            player_score = game.stage_descs[i].get('Paddle1Score', 0)
+            ai_score = game.stage_descs[i].get('Paddle2Score', 0)
             diff_score = player_score - ai_score
 
             game.draw_score_cairo(250, starty + i*50, player_score, 1, v)
@@ -906,6 +940,36 @@ class Game:
 
         # Scores.
         self.scores = []
+        self.scores.append({'Player1Name':'player', 'Player1Score':90, 'Player2Name': 'computer', 'Player2Score':10})
+        self.scores.append({'Player1Name':'player', 'Player1Score':80, 'Player2Name': 'computer', 'Player2Score':20})
+        self.scores.append({'Player1Name':'player', 'Player1Score':70, 'Player2Name': 'computer', 'Player2Score':30})
+        self.scores.append({'Player1Name':'player', 'Player1Score':60, 'Player2Name': 'computer', 'Player2Score':40})
+        self.scores.append({'Player1Name':'player', 'Player1Score':50, 'Player2Name': 'computer', 'Player2Score':50})
+        self.scores.append({'Player1Name':'player', 'Player1Score':40, 'Player2Name': 'computer', 'Player2Score':60})
+        self.scores.append({'Player1Name':'player', 'Player1Score':90, 'Player2Name': 'computer', 'Player2Score':10})
+        self.scores.append({'Player1Name':'player', 'Player1Score':80, 'Player2Name': 'computer', 'Player2Score':20})
+        self.scores.append({'Player1Name':'player', 'Player1Score':70, 'Player2Name': 'computer', 'Player2Score':30})
+        self.scores.append({'Player1Name':'player', 'Player1Score':60, 'Player2Name': 'computer', 'Player2Score':40})
+        self.scores.append({'Player1Name':'player', 'Player1Score':50, 'Player2Name': 'computer', 'Player2Score':50})
+        self.scores.append({'Player1Name':'player', 'Player1Score':40, 'Player2Name': 'computer', 'Player2Score':60})
+        self.scores.append({'Player1Name':'player', 'Player1Score':90, 'Player2Name': 'computer', 'Player2Score':10})
+        self.scores.append({'Player1Name':'player', 'Player1Score':80, 'Player2Name': 'computer', 'Player2Score':20})
+        self.scores.append({'Player1Name':'player', 'Player1Score':70, 'Player2Name': 'computer', 'Player2Score':30})
+        self.scores.append({'Player1Name':'player', 'Player1Score':60, 'Player2Name': 'computer', 'Player2Score':40})
+        self.scores.append({'Player1Name':'player', 'Player1Score':50, 'Player2Name': 'computer', 'Player2Score':50})
+        self.scores.append({'Player1Name':'player', 'Player1Score':40, 'Player2Name': 'computer', 'Player2Score':60})
+        self.scores.append({'Player1Name':'player', 'Player1Score':90, 'Player2Name': 'computer', 'Player2Score':10})
+        self.scores.append({'Player1Name':'player', 'Player1Score':80, 'Player2Name': 'computer', 'Player2Score':20})
+        self.scores.append({'Player1Name':'player', 'Player1Score':70, 'Player2Name': 'computer', 'Player2Score':30})
+        self.scores.append({'Player1Name':'player', 'Player1Score':60, 'Player2Name': 'computer', 'Player2Score':40})
+        self.scores.append({'Player1Name':'player', 'Player1Score':50, 'Player2Name': 'computer', 'Player2Score':50})
+        self.scores.append({'Player1Name':'player', 'Player1Score':40, 'Player2Name': 'computer', 'Player2Score':60})
+        self.scores.append({'Player1Name':'player', 'Player1Score':90, 'Player2Name': 'computer', 'Player2Score':10})
+        self.scores.append({'Player1Name':'player', 'Player1Score':80, 'Player2Name': 'computer', 'Player2Score':20})
+        self.scores.append({'Player1Name':'player', 'Player1Score':70, 'Player2Name': 'computer', 'Player2Score':30})
+        self.scores.append({'Player1Name':'player', 'Player1Score':60, 'Player2Name': 'computer', 'Player2Score':40})
+        self.scores.append({'Player1Name':'player', 'Player1Score':50, 'Player2Name': 'computer', 'Player2Score':50})
+        self.scores.append({'Player1Name':'player', 'Player1Score':40, 'Player2Name': 'computer', 'Player2Score':60})
 
         # The 'X' shape used as an icon.
         self.xpoints = [ (0,0), (0.3,0), (0.5,0.3), (0.7,0), (1,0), (0.7,0.5), (1,1), (0.7,1), (0.5,0.6), (0.3,1), (0,1), (0.3,0.5) ]
@@ -968,8 +1032,8 @@ class Game:
 
     def draw_cairo (self):
         v = self.brightness/100.0
-        self.draw_score_cairo(actual_screen_width*1/4-75, 30, self.paddle1.score, 1, v)
-        self.draw_score_cairo(actual_screen_width*3/4-75, 30, self.paddle2.score, 2, v)
+        self.draw_score_cairo(screen_width*1/4-75, 30, self.paddle1.score, 1, v)
+        self.draw_score_cairo(screen_width*3/4-75, 30, self.paddle2.score, 2, v)
     
         #game.cairo.set_source_rgb(color[0]/255.0, color[1]/255.0, color[2]/255.0)
         #text_cairo(game.stage_descs[game.curlevel]['Name'], -1, 30, 24, v)
@@ -979,7 +1043,8 @@ class Game:
 # Global game instance.
 game = Game()
 
-class Editor(gtk.Layout):
+# Panel that appears above the game, allowing the currently active stage to be edited.
+class EditorPanel(gtk.EventBox):
 
     STEP_STAGENAME    = 0
     STEP_STAGEDEPTH   = 1
@@ -989,14 +1054,13 @@ class Editor(gtk.Layout):
     STEP_AI           = 5
     STEP_MAX          = 6
 
-    def __init__ (self):
-        # todo- This should not be a gtk.Layout, since it needs to actually derive its required size from its children.
-        # However, no other kind of container seems to not draw its background when exposed!
-        gtk.Layout.__init__(self)
+    def __init__ (self, activity):
+        gtk.EventBox.__init__(self)
+
+        self.activity = activity
 
         self.hbox = gtk.HBox()
-        self.hbox.set_size_request(1024, 80)
-        self.put(self.hbox, 0, 0)
+        self.add(self.hbox)
 
         self.hbox.set_border_width(10)
         self.hbox.set_spacing(10)
@@ -1074,7 +1138,7 @@ class Editor(gtk.Layout):
 
         self.ignore_changes = False
 
-        self.set_step(Editor.STEP_STAGENAME)
+        self.set_step(EditorPanel.STEP_STAGENAME)
 
     def on_entry_changed (self, editable):
         if not self.ignore_changes:
@@ -1117,7 +1181,7 @@ class Editor(gtk.Layout):
             self.set_step(self.step-1)
 
     def on_next (self, btn):
-        if self.step < Editor.STEP_MAX-1:
+        if self.step < EditorPanel.STEP_MAX-1:
             self.set_step(self.step+1)
 
     def set_step (self, step):
@@ -1126,19 +1190,19 @@ class Editor(gtk.Layout):
 
         self.step = step
 
-        if self.step == Editor.STEP_STAGENAME:
+        if self.step == EditorPanel.STEP_STAGENAME:
             self.propbox.pack_start(self.stage_label, False, False)
             self.propbox.pack_start(self.separator, False, False)
             self.propbox.pack_start(self.stagename_label, False, False)
             self.propbox.pack_start(self.stagename_entry)
 
-        if self.step == Editor.STEP_STAGEDEPTH:
+        if self.step == EditorPanel.STEP_STAGEDEPTH:
             self.propbox.pack_start(self.stage_label, False, False)
             self.propbox.pack_start(self.separator, False, False)
             self.propbox.pack_start(self.stagedepth_label, False, False)
             self.propbox.pack_start(self.stagedepth_scale)
 
-        if self.step == Editor.STEP_STAGEGRAVITY:
+        if self.step == EditorPanel.STEP_STAGEGRAVITY:
             self.propbox.pack_start(self.stage_label, False, False)
             self.propbox.pack_start(self.separator, False, False)
             self.propbox.pack_start(self.stagegravity_x_label, False, False)
@@ -1146,7 +1210,7 @@ class Editor(gtk.Layout):
             self.propbox.pack_start(self.stagegravity_y_label, False, False)
             self.propbox.pack_start(self.stagegravity_y_scale)
 
-        if self.step == Editor.STEP_BALL:
+        if self.step == EditorPanel.STEP_BALL:
             self.propbox.pack_start(self.ball_label, False, False)
             self.propbox.pack_start(self.separator, False, False)
             self.propbox.pack_start(self.ballsize_label, False, False)
@@ -1154,7 +1218,7 @@ class Editor(gtk.Layout):
             self.propbox.pack_start(self.ballspeed_label, False, False)
             self.propbox.pack_start(self.ballspeed_scale)
 
-        if self.step == Editor.STEP_PADDLE:
+        if self.step == EditorPanel.STEP_PADDLE:
             self.propbox.pack_start(self.paddle_label, False, False)
             self.propbox.pack_start(self.separator, False, False)
             self.propbox.pack_start(self.paddlesize_x_label, False, False)
@@ -1162,7 +1226,7 @@ class Editor(gtk.Layout):
             self.propbox.pack_start(self.paddlesize_y_label, False, False)
             self.propbox.pack_start(self.paddlesize_y_scale)
 
-        if self.step == Editor.STEP_AI:
+        if self.step == EditorPanel.STEP_AI:
             self.propbox.pack_start(self.ai_label, False, False)
             self.propbox.pack_start(self.separator, False, False)
             self.propbox.pack_start(self.aispeed_label, False, False)
@@ -1170,6 +1234,81 @@ class Editor(gtk.Layout):
 
         self.propbox.show_all()
 
+# Panel that appears over the game, showing a list of scores.  Can be toggled on and off without pausing the game.
+class ScorePanel(gtk.VBox):
+    def __init__ (self):
+        gtk.VBox.__init__(self)
+
+        # Header bar.
+        headerbox = gtk.VBox()
+        headerbox.set_spacing(20)
+        lbl = gtk.Label()
+        lbl.set_markup("<span size='x-large'><b>"+_('History of Games')+"</b></span>")
+        headerbox.pack_start(lbl, False)
+        headerbox.pack_start(gtk.HSeparator(), False)
+        hbox = gtk.HBox()
+        hbox.set_homogeneous(True)
+        lbl = gtk.Label()
+        lbl.set_markup('<b>'+_('Player 1')+'</b>')
+        hbox.pack_start(lbl)
+        lbl = gtk.Label()
+        lbl.set_markup('<b>'+_('Score')+'</b>')
+        hbox.pack_start(lbl)
+        lbl = gtk.Label()
+        lbl.set_markup('<b>'+_('Player 2')+'</b>')
+        hbox.pack_end(lbl)
+        lbl = gtk.Label()
+        lbl.set_markup('<b>'+_('Score')+'</b>')
+        hbox.pack_end(lbl)
+        headerbox.pack_start(hbox, False)
+        headerbox.pack_start(gtk.HSeparator(), False)
+
+        # Score box.
+        self.scorebox = gtk.VBox()
+        self.scorebox.set_spacing(10)
+
+        vbox = gtk.VBox()
+        vbox.set_border_width(20)
+        vbox.set_spacing(10)
+        vbox.pack_start(headerbox, False)
+        vbox.pack_start(self.scorebox, False)
+        vbox.pack_start(gtk.HSeparator(), False)
+
+        self.scroll = gtk.ScrolledWindow()
+        self.scroll.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
+        self.scroll.add_with_viewport(vbox)
+
+        frame = gtk.Frame()
+        frame.set_shadow_type(gtk.SHADOW_OUT)
+        frame.add(self.scroll)
+        self.add(frame)
+
+        self.rebuild()
+
+    def rebuild (self):
+        for w in self.scorebox.get_children():
+            w.destroy()
+
+        for s in game.scores:
+            hbox = gtk.HBox()
+            hbox.set_homogeneous(True)
+            hbox.pack_start(gtk.Label(s['Player1Name']))
+            hbox.pack_start(gtk.Label(s['Player1Score']))
+            hbox.pack_end(gtk.Label(s['Player2Name']))
+            hbox.pack_end(gtk.Label(s['Player2Score']))
+            self.scorebox.pack_start(hbox, False)
+
+# This is a fake Presence Service Buddy object that represents computer players.
+class ComputerBuddyProps:
+    def __init__ (self):
+        self.nick = 'Computer'
+
+class ComputerBuddy:
+    def __init__ (self):
+        self.props = ComputerBuddyProps()
+
+# Activity class for the game.  Defines the game user interface (toolbar, etc), controls loading & saving, interacts
+# with the Sugar environment.
 class BounceActivity(activity.Activity):
 
     MODE_GAME = 0
@@ -1177,16 +1316,8 @@ class BounceActivity(activity.Activity):
 
     def __init__ (self, handle):
         activity.Activity.__init__(self, handle)
+
         self.set_title(_("Bounce"))
-
-        # Set up the global activity instance.
-        global ACTIVITY
-        ACTIVITY = self
-
-        # Get activity size. 
-        # todo- What we really need is the size of the canvasarea, not including the toolbox.
-        self.width = gtk.gdk.screen_width()
-        self.height = gtk.gdk.screen_height()
 
         # Build the toolbars.
         self.build_toolbox()
@@ -1195,17 +1326,20 @@ class BounceActivity(activity.Activity):
         self.build_drawarea()
 
         # Build the editor.
-        self.editor = Editor()
-        self.editor.activity = self
-        self.editor.set_size_request(self.width, 80)
-        self.drawarea.put(self.editor, 0, 0)
+        self.editor = EditorPanel(self)
+        self.vbox.pack_start(self.editor, False)
+
+        # Build the score panel.
+        self.scorepanel = ScorePanel()
+        align = gtk.Alignment(0.0, 0.0, 1.0, 1.0)
+        align.set_padding(50, 50, 100, 100)
+        align.add(self.scorepanel)
+        self.vbox.pack_start(align, True, True)
+        #self.vbox.set_visible_window(True)
 
         # Turn off double buffering except for the drawarea, which mixes cairo and custom drawing.
         self.set_double_buffered(False)
         self.drawarea.set_double_buffered(True)
-
-        # Get the mainloop ready to run.
-        gobject.timeout_add(50, self.mainloop)
 
         # Initialize the game.
         game.new_game()
@@ -1213,11 +1347,13 @@ class BounceActivity(activity.Activity):
         self.paused = False
         self.mode = BounceActivity.MODE_GAME
 
-        # Show everything (except the editor).
+        # Show everything.
+        self.set_canvas(self.drawarea)
         self.show_all()
         self.editor.hide_all()
+        self.scorepanel.hide_all()
 
-        # Initialize the FPS counter.
+        # Initialize the FPS counter & limiter.
         self.lastclock = time.time()
         game.fps = 0.0
         self.limitfps = 20.0 # 20fps is what the XO can currently handle.
@@ -1225,11 +1361,30 @@ class BounceActivity(activity.Activity):
         # Initialize sound playback.
         self.init_sound()
 
+        # Get current player info for the scores table.
+        self.pservice = presenceservice.get_instance()
+        self.owner = self.pservice.get_owner()
+
+        # Fill in game players.
+        game.player1 = self.owner
+        game.player2 = ComputerBuddy()
+
+        # Get the mainloop ready to run (this should come last).
+        gobject.timeout_add(50, self.mainloop)
+
+    #-----------------------------------------------------------------------------------------------------------------
+    # User interface building.
+
     def build_drawarea (self):
         self.drawarea = gtk.Layout()
-        self.drawarea.set_size_request(self.width, self.height)
+        #self.drawarea.set_visible_window(True)
+        self.drawarea.set_size_request(gtk.gdk.screen_width(), gtk.gdk.screen_height())
+
+        self.vbox = gtk.VBox()
+        self.drawarea.put(self.vbox, 0, 0)
 
         self.drawarea.connect('destroy', self.on_destroy)
+        #self.drawarea.connect('configure-event', self.on_drawarea_resize)
         self.drawarea.connect('expose-event', self.on_drawarea_expose)
 
         self.drawarea.add_events(gtk.gdk.POINTER_MOTION_MASK|gtk.gdk.BUTTON_PRESS_MASK|gtk.gdk.BUTTON_RELEASE_MASK)
@@ -1237,20 +1392,20 @@ class BounceActivity(activity.Activity):
         self.drawarea.connect('button-press-event', self.on_mouse)
         self.drawarea.connect('button-release-event', self.on_mouse)
 
-        self.drawimage = gtk.gdk.Image(gtk.gdk.IMAGE_FASTEST, gtk.gdk.visual_get_system(), self.width, self.height)
-        game.drawimage = self.drawimage
-
-        self.set_canvas(self.drawarea)
+        self.drawimage = None
+        game.drawimage = None
 
     def build_gamebox (self):
         self.pausebtn = toolbutton.ToolButton('media-playback-pause')
         self.pausebtn.set_tooltip(_("Pause Game"))
         self.pausebtn.connect('clicked', self.on_game_pause)
 
-        self.showscoresbtn = toolbutton.ToolButton('zoom-in')
-        self.showscoresbtn.set_tooltip(_("Show Scores"))
+        self.showscoresbtn = toggletoolbutton.ToggleToolButton('zoom-in')
+        self.showscoresbtn.set_tooltip(_("Show History"))
+        self.showscoresbtn.connect('clicked', self.on_game_showscores)
         self.clearscoresbtn = toolbutton.ToolButton('list-remove')
-        self.clearscoresbtn.set_tooltip(_("Reset Scores"))
+        self.clearscoresbtn.set_tooltip(_("Reset History"))
+        self.clearscoresbtn.connect('clicked', self.on_game_clearscores)
 
         sep = gtk.SeparatorToolItem()
         sep.set_expand(True)
@@ -1269,7 +1424,7 @@ class BounceActivity(activity.Activity):
 
     def build_editbox (self):
         self.testbtn = toggletoolbutton.ToggleToolButton('zoom-in')
-        self.testbtn.set_tooltip(_("Test"))
+        self.testbtn.set_tooltip(_("Test Stage"))
         self.testbtn.connect('clicked', self.on_edit_test)
 
         self.prevstagebtn = toolbutton.ToolButton('go-left')
@@ -1314,6 +1469,9 @@ class BounceActivity(activity.Activity):
 
         self.set_toolbox(self.tbox)
 
+    #-----------------------------------------------------------------------------------------------------------------
+    # Sound code - Using GStreamer (not used for now due to latency issues)
+    
     def init_sound (self):
         self.player = gst.element_factory_make("playbin", "player")
         fakesink = gst.element_factory_make('fakesink', "my-fakesink")
@@ -1332,68 +1490,42 @@ class BounceActivity(activity.Activity):
             raise "GST error! %s" % message 
 
     def play_sound (self, name):
-        #self.player.set_property('uri', "file://"+activity.get_bundle_path()+"/"+name)
+        self.player.set_property('uri', "file://"+activity.get_bundle_path()+"/"+name)
         self.player.set_state(gst.STATE_PLAYING)
 
-    # Activity modes
-    def set_mode (self, mode):
-        self.mode = mode
-
-        if self.mode == BounceActivity.MODE_GAME:
-            self.tbox.remove_toolbar(1)
-            self.build_gamebox()
-            self.tbox.add_toolbar(_("Game"), self.gamebox)
-            self.gamebox.show_all()
-            self.tbox.set_current_toolbar(1)
-
-            self.pause_game(False)
-
-            self.editor.hide_all()
-            game.set_sequence(IntroSequence())
-            self.queue_draw()
-
-        if self.mode == BounceActivity.MODE_EDIT:
-            self.tbox.remove_toolbar(1)
-            self.build_editbox()
-            self.tbox.add_toolbar(_("Edit"), self.editbox)
-            self.editbox.show_all()
-            self.tbox.set_current_toolbar(1)
-            self.editor.copy_from_desc(game.stage_descs[game.curlevel])
-
-            game.set_level(game.curlevel)
-            self.pause_game(True)
-
-            self.editor.show_all()
-            game.set_sequence(EditSequence())
-            self.queue_draw()
-
-    def on_edit (self, button):
-        msg = alert.ConfirmationAlert()
-        msg.props.title = _('Change to Edit Mode?')
-        msg.props.msg = _('If you change to edit mode, this game\'s scores will be cleared.')
-        self.add_alert(msg)
-        msg.connect('response', self.on_edit_confirm)
-        msg.show_all()
-
-    def on_edit_confirm(self, alert, response_id):
-        self.remove_alert(alert)
-        if response_id is gtk.RESPONSE_OK:
-            self.set_mode(BounceActivity.MODE_EDIT)
-
-    def on_game (self, button):
-        self.set_mode(BounceActivity.MODE_GAME)
-
+    #-----------------------------------------------------------------------------------------------------------------
     # Game toolbar
+    
     def on_game_pause (self, button):
         self.pause_game(not self.paused)
 
     def on_game_showscores (self, button):
-        log.debug("on_game_showscores not implemented");
+        if button.get_active():
+            self.scorepanel.rebuild()
+
+            self.scorepanel.show_all()
+        else:
+            self.scorepanel.hide_all()
 
     def on_game_clearscores (self, button):
-        log.debug("on_game_clearscores not implemented");
+        msg = alert.ConfirmationAlert()
+        msg.props.title = _('Clear Scores?')
+        msg.props.msg = _('This will erase the history of games played.')
 
+        def response(alert, response_id, self):
+            self.remove_alert(alert)
+            if response_id is gtk.RESPONSE_OK:
+                game.scores = []
+                self.scorepanel.rebuild()
+
+        msg.connect('response', response, self)
+
+        self.add_alert(msg)
+        msg.show_all()
+
+    #-----------------------------------------------------------------------------------------------------------------
     # Edit toolbar
+    
     def on_edit_test (self, button):
         if button.get_active():
             game.set_sequence(TestSequence())
@@ -1435,17 +1567,43 @@ class BounceActivity(activity.Activity):
         self.editor.copy_from_desc(game.stage_descs[game.curlevel])
         self.queue_draw()
 
-    # Drawing methods
+    #-----------------------------------------------------------------------------------------------------------------
+    # DrawArea event handlers - Drawing, resizing, etc.
+
+    def on_drawarea_resize (self):
+        rect = self.drawarea.get_allocation()
+        #log.debug("drawarea resized to %dx%d", rect[2], rect[3])
+
+        self.vbox.set_size_request(rect[2], rect[3])
+
+        # Set 3D parameters.
+        global screen_width
+        global screen_height
+        screen_width = rect[2]
+        screen_height = rect[3]
+        set_3d_params(screen_width, screen_height, viewport_scale)
+
+        # Rebuild drawimage.
+        self.drawimage = gtk.gdk.Image(gtk.gdk.IMAGE_FASTEST, gtk.gdk.visual_get_system(), rect[2], rect[3])
+        game.drawimage = self.drawimage
+
+        # Resize editor.
+        #self.editor.set_size_request(rect[2], -1)
+        #self.drawarea.move(self.editor, 0, 0)
+
+        # Resize score panel.
+        #self.scorepanel.set_size_request(rect[2]*3/4, rect[3]*3/4)
+        #self.drawarea.move(self.scorepanel, rect[2]*1/8, rect[3]*1/8)
+
+        return True
+
     def on_drawarea_expose (self, widget, event):
         if not self.drawarea.bin_window:
             return True
 
-        global actual_screen_width
-        global actual_screen_height
-        actual_screen_width = self.drawarea.get_allocation()[2]
-        actual_screen_height = self.drawarea.get_allocation()[3]
-
-        set_3d_params(actual_screen_width, actual_screen_height, viewport_scale)
+        rect = self.drawarea.get_allocation()
+        if self.drawimage is None or (rect[2] != screen_width or rect[3] != screen_height):
+            self.on_drawarea_resize()
 
         # Perform 3D rendering to the offscreen image and draw it to the screen.
         clear_image(self.drawimage)
@@ -1460,8 +1618,63 @@ class BounceActivity(activity.Activity):
 
         # Hack to fix toolbox refresh.
         #self.tbox.queue_draw()
+    
+    #-----------------------------------------------------------------------------------------------------------------
+    # Game control - Editor / Game modes, pausing, etc.
 
-    # Game update methods
+    def set_mode (self, mode):
+        self.mode = mode
+
+        if self.mode == BounceActivity.MODE_GAME:
+            self.tbox.remove_toolbar(1)
+            self.build_gamebox()
+            self.tbox.add_toolbar(_("Game"), self.gamebox)
+            self.gamebox.show_all()
+            self.tbox.set_current_toolbar(1)
+
+            self.pause_game(False)
+
+            self.editor.hide_all()
+            game.set_sequence(IntroSequence())
+            self.queue_draw()
+
+        if self.mode == BounceActivity.MODE_EDIT:
+            self.showscoresbtn.set_active(False)
+            game.scores = []
+            self.scorepanel.rebuild()
+
+            self.tbox.remove_toolbar(1)
+            self.build_editbox()
+            self.tbox.add_toolbar(_("Edit"), self.editbox)
+            self.editbox.show_all()
+            self.tbox.set_current_toolbar(1)
+            self.editor.copy_from_desc(game.stage_descs[game.curlevel])
+
+            game.set_level(game.curlevel)
+            self.pause_game(True)
+
+            self.editor.show_all()
+            game.set_sequence(EditSequence())
+            self.queue_draw()
+
+    def on_edit (self, button):
+        msg = alert.ConfirmationAlert()
+        msg.props.title = _('Change to Edit Mode?')
+        msg.props.msg = _('If you change to edit mode, the history of games will be cleared.')
+
+        def response(alert, response_id, self):
+            self.remove_alert(alert)
+            if response_id is gtk.RESPONSE_OK:
+                self.set_mode(BounceActivity.MODE_EDIT)
+
+        msg.connect('response', response, self)
+
+        self.add_alert(msg)
+        msg.show_all()
+
+    def on_game (self, button):
+        self.set_mode(BounceActivity.MODE_GAME)
+
     def pause_game (self, p):
         self.paused = p
         if self.paused:
@@ -1529,10 +1742,12 @@ class BounceActivity(activity.Activity):
 
             # Restore stages.
             game.stage_descs = storage['Stages']
+            game.scores = storage['Scores']
 
             # Restore activity state.
             game.set_level(storage.get('curlevel', 0))
             self.set_mode(storage.get('mode', BounceActivity.MODE_GAME))
+            game.showscoresbtn.set_active(storage.get('history_visible', False))
 
             # Switch to editor toolbox if in edit mode.
             if self.mode == BounceActivity.MODE_EDIT:
@@ -1550,10 +1765,12 @@ class BounceActivity(activity.Activity):
 
         # Save stages.
         storage['Stages'] = game.stage_descs
+        storage['Scores'] = game.scores
 
         # Save activity state.
         storage['curlevel'] = game.curlevel
         storage['mode'] = self.mode
+        storage['history_visible'] = self.showscoresbtn.get_active()
 
         fd = open(file_path, 'w')
         try:
