@@ -940,36 +940,6 @@ class Game:
 
         # Scores.
         self.scores = []
-        self.scores.append({'Player1Name':'player', 'Player1Score':90, 'Player2Name': 'computer', 'Player2Score':10})
-        self.scores.append({'Player1Name':'player', 'Player1Score':80, 'Player2Name': 'computer', 'Player2Score':20})
-        self.scores.append({'Player1Name':'player', 'Player1Score':70, 'Player2Name': 'computer', 'Player2Score':30})
-        self.scores.append({'Player1Name':'player', 'Player1Score':60, 'Player2Name': 'computer', 'Player2Score':40})
-        self.scores.append({'Player1Name':'player', 'Player1Score':50, 'Player2Name': 'computer', 'Player2Score':50})
-        self.scores.append({'Player1Name':'player', 'Player1Score':40, 'Player2Name': 'computer', 'Player2Score':60})
-        self.scores.append({'Player1Name':'player', 'Player1Score':90, 'Player2Name': 'computer', 'Player2Score':10})
-        self.scores.append({'Player1Name':'player', 'Player1Score':80, 'Player2Name': 'computer', 'Player2Score':20})
-        self.scores.append({'Player1Name':'player', 'Player1Score':70, 'Player2Name': 'computer', 'Player2Score':30})
-        self.scores.append({'Player1Name':'player', 'Player1Score':60, 'Player2Name': 'computer', 'Player2Score':40})
-        self.scores.append({'Player1Name':'player', 'Player1Score':50, 'Player2Name': 'computer', 'Player2Score':50})
-        self.scores.append({'Player1Name':'player', 'Player1Score':40, 'Player2Name': 'computer', 'Player2Score':60})
-        self.scores.append({'Player1Name':'player', 'Player1Score':90, 'Player2Name': 'computer', 'Player2Score':10})
-        self.scores.append({'Player1Name':'player', 'Player1Score':80, 'Player2Name': 'computer', 'Player2Score':20})
-        self.scores.append({'Player1Name':'player', 'Player1Score':70, 'Player2Name': 'computer', 'Player2Score':30})
-        self.scores.append({'Player1Name':'player', 'Player1Score':60, 'Player2Name': 'computer', 'Player2Score':40})
-        self.scores.append({'Player1Name':'player', 'Player1Score':50, 'Player2Name': 'computer', 'Player2Score':50})
-        self.scores.append({'Player1Name':'player', 'Player1Score':40, 'Player2Name': 'computer', 'Player2Score':60})
-        self.scores.append({'Player1Name':'player', 'Player1Score':90, 'Player2Name': 'computer', 'Player2Score':10})
-        self.scores.append({'Player1Name':'player', 'Player1Score':80, 'Player2Name': 'computer', 'Player2Score':20})
-        self.scores.append({'Player1Name':'player', 'Player1Score':70, 'Player2Name': 'computer', 'Player2Score':30})
-        self.scores.append({'Player1Name':'player', 'Player1Score':60, 'Player2Name': 'computer', 'Player2Score':40})
-        self.scores.append({'Player1Name':'player', 'Player1Score':50, 'Player2Name': 'computer', 'Player2Score':50})
-        self.scores.append({'Player1Name':'player', 'Player1Score':40, 'Player2Name': 'computer', 'Player2Score':60})
-        self.scores.append({'Player1Name':'player', 'Player1Score':90, 'Player2Name': 'computer', 'Player2Score':10})
-        self.scores.append({'Player1Name':'player', 'Player1Score':80, 'Player2Name': 'computer', 'Player2Score':20})
-        self.scores.append({'Player1Name':'player', 'Player1Score':70, 'Player2Name': 'computer', 'Player2Score':30})
-        self.scores.append({'Player1Name':'player', 'Player1Score':60, 'Player2Name': 'computer', 'Player2Score':40})
-        self.scores.append({'Player1Name':'player', 'Player1Score':50, 'Player2Name': 'computer', 'Player2Score':50})
-        self.scores.append({'Player1Name':'player', 'Player1Score':40, 'Player2Name': 'computer', 'Player2Score':60})
 
         # The 'X' shape used as an icon.
         self.xpoints = [ (0,0), (0.3,0), (0.5,0.3), (0.7,0), (1,0), (0.7,0.5), (1,1), (0.7,1), (0.5,0.6), (0.3,1), (0,1), (0.3,0.5) ]
@@ -1136,6 +1106,8 @@ class EditorPanel(gtk.EventBox):
         self.aispeed_adjust.connect('value-changed', self.on_value_changed)
         self.aispeed_scale = gtk.HScale(self.aispeed_adjust)
 
+        self.show_all()
+
         self.ignore_changes = False
 
         self.set_step(EditorPanel.STEP_STAGENAME)
@@ -1284,6 +1256,7 @@ class ScorePanel(gtk.VBox):
         self.add(frame)
 
         self.rebuild()
+        self.show_all()
 
     def rebuild (self):
         for w in self.scorebox.get_children():
@@ -1327,7 +1300,9 @@ class BounceActivity(activity.Activity):
 
         # Build the editor.
         self.editor = EditorPanel(self)
+        self.editor.set_no_show_all(True)
         self.vbox.pack_start(self.editor, False)
+        self.editor.hide_all()
 
         # Build the score panel.
         self.scorepanel = ScorePanel()
@@ -1335,7 +1310,8 @@ class BounceActivity(activity.Activity):
         align.set_padding(50, 50, 100, 100)
         align.add(self.scorepanel)
         self.vbox.pack_start(align, True, True)
-        #self.vbox.set_visible_window(True)
+        self.scorepanel.set_no_show_all(True)
+        self.scorepanel.hide_all()
 
         # Turn off double buffering except for the drawarea, which mixes cairo and custom drawing.
         self.set_double_buffered(False)
@@ -1346,12 +1322,6 @@ class BounceActivity(activity.Activity):
 
         self.paused = False
         self.mode = BounceActivity.MODE_GAME
-
-        # Show everything.
-        self.set_canvas(self.drawarea)
-        self.show_all()
-        self.editor.hide_all()
-        self.scorepanel.hide_all()
 
         # Initialize the FPS counter & limiter.
         self.lastclock = time.time()
@@ -1368,6 +1338,11 @@ class BounceActivity(activity.Activity):
         # Fill in game players.
         game.player1 = self.owner
         game.player2 = ComputerBuddy()
+
+        # Show everything.
+        self.set_canvas(self.drawarea)
+        self.show_all()
+        self.editor.hide_all()
 
         # Get the mainloop ready to run (this should come last).
         gobject.timeout_add(50, self.mainloop)
@@ -1503,9 +1478,9 @@ class BounceActivity(activity.Activity):
         if button.get_active():
             self.scorepanel.rebuild()
 
-            self.scorepanel.show_all()
+            self.scorepanel.show()
         else:
-            self.scorepanel.hide_all()
+            self.scorepanel.hide()
 
     def on_game_clearscores (self, button):
         msg = alert.ConfirmationAlert()
@@ -1634,7 +1609,7 @@ class BounceActivity(activity.Activity):
 
             self.pause_game(False)
 
-            self.editor.hide_all()
+            self.editor.hide()
             game.set_sequence(IntroSequence())
             self.queue_draw()
 
@@ -1653,7 +1628,7 @@ class BounceActivity(activity.Activity):
             game.set_level(game.curlevel)
             self.pause_game(True)
 
-            self.editor.show_all()
+            self.editor.show()
             game.set_sequence(EditSequence())
             self.queue_draw()
 
@@ -1747,14 +1722,13 @@ class BounceActivity(activity.Activity):
             # Restore activity state.
             game.set_level(storage.get('curlevel', 0))
             self.set_mode(storage.get('mode', BounceActivity.MODE_GAME))
-            game.showscoresbtn.set_active(storage.get('history_visible', False))
+            #game.showscoresbtn.set_active(storage.get('history_visible', False))
 
-            # Switch to editor toolbox if in edit mode.
-            if self.mode == BounceActivity.MODE_EDIT:
-                self.tbox.set_current_toolbar(2)
-
-            # Game always restores paused.
+            # Always start resumed games paused, with the scores up.
             self.pause_game(True)
+            # (not working at the moment, the window comes up but the button stays inactive)
+            #if self.mode == BounceActivity.MODE_GAME:
+            #    game.showscoresbtn.set_active(True)
 
     def write_file(self, file_path):
         # Save document.
