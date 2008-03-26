@@ -1,5 +1,7 @@
 Bounce-4
 - Renamed from 3dpong to Bounce.
+- Fixed sounds.
+- Optimized framerate and locked to 30fps.
 
 3dpong-3
 - Added level editor.

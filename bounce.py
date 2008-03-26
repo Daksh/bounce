@@ -5,34 +5,34 @@ from gettext import gettext as _
 
 # This section can be modified to change the default stages that are built into the activity.
 default_stage_descs = [
-    { 'Name': _('practice'), 'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, },
-#    { 'Name': _('gravity'),  'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 2, 'AIRecenter': 1, },
-#    { 'Name': _('wide'),     'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 1, 'BallSize': 1, 'BallSpeed':  4, 'PaddleWidth': 50, 'PaddleHeight': 15, 'AISpeed': 4, 'AIRecenter': 1, },
-#    { 'Name': _('deep'),     'StageDepth': 500, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25, 'AISpeed': 5, 'AIRecenter': 0, },
-#    { 'Name': _('rotate'),   'StageDepth': 160, 'StageXGravity': 1, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 5, 'AIRecenter': 1, },
+    { 'Name': _('practice'), 'StageDepth': 160, 'StageXGravity': 0,   'StageYGravity': 0,   'BallSize': 1, 'BallSpeed':  2, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, },
+    { 'Name': _('gravity'),  'StageDepth': 160, 'StageXGravity': 0,   'StageYGravity': 0.5, 'BallSize': 1, 'BallSpeed':  2, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 2, 'AIRecenter': 1, },
+    { 'Name': _('wide'),     'StageDepth': 160, 'StageXGravity': 0,   'StageYGravity': 0.5, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 50, 'PaddleHeight': 15, 'AISpeed': 3, 'AIRecenter': 1, },
+    { 'Name': _('deep'),     'StageDepth': 500, 'StageXGravity': 0,   'StageYGravity': 0,   'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25, 'AISpeed': 2.5, 'AIRecenter': 0, },
+    { 'Name': _('rotate'),   'StageDepth': 160, 'StageXGravity': 0.5, 'StageYGravity': 0,   'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 3, 'AIRecenter': 1, },
 ]
 
 import logging, os, time, math, threading, random, json, time
 
 from pongc import *
 
+# Import GTK.
 import gobject, pygtk, gtk, pango, cairo
 gobject.threads_init()  
 
-# Import GStreamer (for sound output).
-import pygst, gst
+# Import the PyGame mixer for sound output.
+import pygame.mixer
+pygame.mixer.init()
 
-# Import alsaaudio.
-#import alsaaudio
-
+# Import Sugar modules.
 from sugar.activity import activity
 from sugar.graphics import *
 from sugar.graphics import alert
 from sugar.graphics import toggletoolbutton
 from sugar.graphics import icon
-
 from sugar.presence import presenceservice
 
+# Initialize logging.
 log = logging.getLogger('bounce')
 log.setLevel(logging.DEBUG)
 logging.basicConfig()
@@ -52,6 +52,7 @@ def from_fixed(a):
 def fixed_mul(a, b):
     return (a * b) >> 8
 
+# Three dimensional vector class.
 class Vector:
     def __init__(self, x=0, y=0, z=0):
         self.x = x
@@ -60,61 +61,20 @@ class Vector:
 
 zerovec = Vector(0, 0, 0)
 
+# RGB color class.
 class Color:
     def __init__(self, r=255, g=255, b=255):
         self.r = r
         self.g = g
         self.b = b
 
+# Two dimensional rectangle class.
 class Rect:
     def __init__(self):
         self.top = 0
         self.left = 0
         self.right = 0
         self.bottom = 0
-
-# This works, but there is a 1-2 second delay before the sound actually starts playing.
-# Need to buffer the audio into memory somehow.
-class GSTSound:
-    def __init__ (self, name):
-        self.player = gst.element_factory_make("playbin", "player")
-        self.fakesink = gst.element_factory_make('fakesink', "my-fakesink")
-        self.player.set_property("video-sink", self.fakesink)
-        self.bus = self.player.get_bus()
-        self.bus.add_signal_watch()
-        self.bus.connect('message', self.on_gst_message)
-        self.player.set_property('uri', "file://"+activity.get_bundle_path()+"/"+name)
-
-    def on_gst_message(self, bus, message):
-        t = message.type
-        if t == gst.MESSAGE_EOS:
-            self.player.set_state(gst.STATE_NULL)
-        elif t == gst.MESSAGE_ERROR:
-            self.player.set_state(gst.STATE_NULL)
-            raise "GST error! %s" % message 
-
-    def play (self):
-        self.player.set_state(gst.STATE_PLAYING)
-
-# Does not currently work (can only have one PCM object perhaps?).
-class Sound:
-    def __init__ (self, name):
-        pass
-        #self.out = alsaaudio.PCM(alsaaudio.PCM_PLAYBACK)
-        #self.out.setchannels(1)
-        #self.out.setrate(8000)
-        #self.out.setformat(alsaaudio.PCM_FORMAT_S16_LE)
-        #self.out.setperiodsize(160)
-
-        #fd = open(activity.get_bundle_path()+'/'+name, 'r')
-        #try:
-        #    self.data = fd.read(320)
-        #finally:
-        #    fd.close()
-
-    def play (self):
-        pass
-        #self.out.write(self.data)
 
 # Virtual screen dimensions
 screen_width = 1200
@@ -666,12 +626,12 @@ class BallReleaseSequence:
 
     def draw_cairo (self):
         game.draw_cairo()
-        text_cairo(str(3-self.timer1), -1, -1, 20, math.sin(math.pi*self.timer0/30))
+        text_cairo(str(3-self.timer1), -1, -1, 20, math.sin(math.pi*self.timer0/35))
 
     def update (self):
         if (game.brightness < 100): game.brightness += 1
         self.timer0 += 1
-        if (self.timer0 > 25):
+        if (self.timer0 > 35):
             self.timer1 += 1
             self.timer0 = 0
         if (self.timer1 >= 3):
@@ -945,12 +905,11 @@ class Game:
         self.xpoints = [ (0,0), (0.3,0), (0.5,0.3), (0.7,0), (1,0), (0.7,0.5), (1,1), (0.7,1), (0.5,0.6), (0.3,1), (0,1), (0.3,0.5) ]
 
         # Create sounds.
-        self.scoresnd = Sound('sound/player1paddle.wav')
-        self.paddle1snd = Sound('sound/player1paddle.wav')
-        self.paddle1snd = Sound('sound/player1paddle.wav')
-        self.paddle2snd = Sound('sound/player2paddle.wav')
-        self.wallsnd = Sound('sound/wall.wav')
-        self.introsnd = Sound('sound/intro.wav')
+        self.scoresnd = pygame.mixer.Sound(activity.get_bundle_path()+'/sound/score.wav')
+        self.paddle1snd = pygame.mixer.Sound(activity.get_bundle_path()+'/sound/player1paddle.wav')
+        self.paddle2snd = pygame.mixer.Sound(activity.get_bundle_path()+'/sound/player2paddle.wav')
+        self.wallsnd = pygame.mixer.Sound(activity.get_bundle_path()+'/sound/wall.wav')
+        self.introsnd = pygame.mixer.Sound(activity.get_bundle_path()+'/sound/intro.wav')
 
     def set_sequence (self, seq):
         self.sequence.leave()
@@ -974,25 +933,36 @@ class Game:
     def new_game(self):
         self.set_level(0)
 
+    def draw_score_3d(self, x, y, score, player, v):
+        for j in range(0, 5):
+            px = x + j*30
+            py = y
+            if j < score:
+                fill_ellipse_2x(game.drawimage, px/2, py/2, 6, 6, int(v*255.0))
+            else:
+                draw_ellipse_2x(game.drawimage, px/2, py/2, 6, 6, int(v*255.0))
+
     def draw_score_cairo(self, x, y, score, player, c):
         game.cairo.set_source_rgb(c,c,c)
         for j in range(0, 5):
             px = x + j*30
             py = y
 
-            if player == 1:
-                game.cairo.move_to(game.xpoints[0][0]*20-10+px, game.xpoints[0][1]*20-10+py)
-                for p in game.xpoints:
-                    game.cairo.line_to(p[0]*20-10+px, p[1]*20-10+py)
-                game.cairo.line_to(game.xpoints[0][0]*20-10+px, game.xpoints[0][1]*20-10+py)
-            elif player == 2:
-                game.cairo.move_to(px + 10, py)
-                game.cairo.arc(px, py, 10, 0, 2*math.pi)
+            #if player == 1:
+            #    game.cairo.move_to(game.xpoints[0][0]*20-10+px, game.xpoints[0][1]*20-10+py)
+            #    for p in game.xpoints:
+            #        game.cairo.line_to(p[0]*20-10+px, p[1]*20-10+py)
+            #    game.cairo.line_to(game.xpoints[0][0]*20-10+px, game.xpoints[0][1]*20-10+py)
+            #elif player == 2:
+            
+            game.cairo.move_to(px + 10, py)
+            game.cairo.arc(px, py, 10, 0, 2*math.pi)
 
             if j < score:
                 game.cairo.fill()
             else:
                 game.cairo.stroke()
+
 
     def draw_3d(self):
         self.stage.draw_3d()
@@ -1000,11 +970,11 @@ class Game:
         self.paddle2.draw_3d(self.stage)
         self.ball.draw_3d(self.stage)
 
-    def draw_cairo (self):
         v = self.brightness/100.0
-        self.draw_score_cairo(screen_width*1/4-75, 30, self.paddle1.score, 1, v)
-        self.draw_score_cairo(screen_width*3/4-75, 30, self.paddle2.score, 2, v)
-    
+        self.draw_score_3d(screen_width*1/4-75, 30, self.paddle1.score, 1, v)
+        self.draw_score_3d(screen_width*3/4-75, 30, self.paddle2.score, 2, v)
+
+    def draw_cairo (self):
         #game.cairo.set_source_rgb(color[0]/255.0, color[1]/255.0, color[2]/255.0)
         #text_cairo(game.stage_descs[game.curlevel]['Name'], -1, 30, 24, v)
 
@@ -1284,12 +1254,12 @@ class ComputerBuddy:
 # with the Sugar environment.
 class BounceActivity(activity.Activity):
 
+    # Game mode definitions.
     MODE_GAME = 0
     MODE_EDIT = 1
 
     def __init__ (self, handle):
         activity.Activity.__init__(self, handle)
-
         self.set_title(_("Bounce"))
 
         # Build the toolbars.
@@ -1299,19 +1269,10 @@ class BounceActivity(activity.Activity):
         self.build_drawarea()
 
         # Build the editor.
-        self.editor = EditorPanel(self)
-        self.editor.set_no_show_all(True)
-        self.vbox.pack_start(self.editor, False)
-        self.editor.hide_all()
+        self.build_editor()
 
         # Build the score panel.
-        self.scorepanel = ScorePanel()
-        align = gtk.Alignment(0.0, 0.0, 1.0, 1.0)
-        align.set_padding(50, 50, 100, 100)
-        align.add(self.scorepanel)
-        self.vbox.pack_start(align, True, True)
-        self.scorepanel.set_no_show_all(True)
-        self.scorepanel.hide_all()
+        self.build_scorepanel()
 
         # Turn off double buffering except for the drawarea, which mixes cairo and custom drawing.
         self.set_double_buffered(False)
@@ -1326,10 +1287,7 @@ class BounceActivity(activity.Activity):
         # Initialize the FPS counter & limiter.
         self.lastclock = time.time()
         game.fps = 0.0
-        self.limitfps = 20.0 # 20fps is what the XO can currently handle.
-
-        # Initialize sound playback.
-        self.init_sound()
+        self.limitfps = 30.0 # 30fps is what the XO can currently handle.
 
         # Get current player info for the scores table.
         self.pservice = presenceservice.get_instance()
@@ -1339,10 +1297,11 @@ class BounceActivity(activity.Activity):
         game.player1 = self.owner
         game.player2 = ComputerBuddy()
 
-        # Show everything.
+        # Show everything except the panels.
         self.set_canvas(self.drawarea)
         self.show_all()
         self.editor.hide_all()
+        self.scorepanel.hide_all()
 
         # Get the mainloop ready to run (this should come last).
         gobject.timeout_add(50, self.mainloop)
@@ -1428,8 +1387,10 @@ class BounceActivity(activity.Activity):
 
         self.editbox = gtk.Toolbar()
         self.editbox.insert(self.testbtn, -1)
+        self.editbox.insert(gtk.SeparatorToolItem(), -1)
         self.editbox.insert(self.prevstagebtn, -1)
         self.editbox.insert(self.nextstagebtn, -1)
+        self.editbox.insert(gtk.SeparatorToolItem(), -1)
         self.editbox.insert(self.deletestagebtn, -1)
         self.editbox.insert(self.addstagebtn, -1)
         self.editbox.insert(sep, -1)
@@ -1444,29 +1405,16 @@ class BounceActivity(activity.Activity):
 
         self.set_toolbox(self.tbox)
 
-    #-----------------------------------------------------------------------------------------------------------------
-    # Sound code - Using GStreamer (not used for now due to latency issues)
-    
-    def init_sound (self):
-        self.player = gst.element_factory_make("playbin", "player")
-        fakesink = gst.element_factory_make('fakesink', "my-fakesink")
-        self.player.set_property("video-sink", fakesink)
-        bus = self.player.get_bus()
-        bus.add_signal_watch()
-        bus.connect('message', self.on_gst_message)
-        self.player.set_property('uri', "file://"+activity.get_bundle_path()+"/"+'sound/wall.wav')
+    def build_editor (self):
+        self.editor = EditorPanel(self)
+        self.vbox.pack_start(self.editor, False)
 
-    def on_gst_message(self, bus, message):
-        t = message.type
-        if t == gst.MESSAGE_EOS:
-            self.player.set_state(gst.STATE_NULL)
-        elif t == gst.MESSAGE_ERROR:
-            self.player.set_state(gst.STATE_NULL)
-            raise "GST error! %s" % message 
-
-    def play_sound (self, name):
-        self.player.set_property('uri', "file://"+activity.get_bundle_path()+"/"+name)
-        self.player.set_state(gst.STATE_PLAYING)
+    def build_scorepanel (self):
+        self.scorepanel = ScorePanel()
+        align = gtk.Alignment(0.0, 0.0, 1.0, 1.0)
+        align.set_padding(50, 50, 100, 100)
+        align.add(self.scorepanel)
+        self.vbox.pack_start(align, True, True)
 
     #-----------------------------------------------------------------------------------------------------------------
     # Game toolbar
@@ -1477,14 +1425,13 @@ class BounceActivity(activity.Activity):
     def on_game_showscores (self, button):
         if button.get_active():
             self.scorepanel.rebuild()
-
-            self.scorepanel.show()
+            self.scorepanel.show_all()
         else:
-            self.scorepanel.hide()
+            self.scorepanel.hide_all()
 
     def on_game_clearscores (self, button):
         msg = alert.ConfirmationAlert()
-        msg.props.title = _('Clear Scores?')
+        msg.props.title = _('Reset History?')
         msg.props.msg = _('This will erase the history of games played.')
 
         def response(alert, response_id, self):
@@ -1562,14 +1509,6 @@ class BounceActivity(activity.Activity):
         self.drawimage = gtk.gdk.Image(gtk.gdk.IMAGE_FASTEST, gtk.gdk.visual_get_system(), rect[2], rect[3])
         game.drawimage = self.drawimage
 
-        # Resize editor.
-        #self.editor.set_size_request(rect[2], -1)
-        #self.drawarea.move(self.editor, 0, 0)
-
-        # Resize score panel.
-        #self.scorepanel.set_size_request(rect[2]*3/4, rect[3]*3/4)
-        #self.drawarea.move(self.scorepanel, rect[2]*1/8, rect[3]*1/8)
-
         return True
 
     def on_drawarea_expose (self, widget, event):
@@ -1609,7 +1548,7 @@ class BounceActivity(activity.Activity):
 
             self.pause_game(False)
 
-            self.editor.hide()
+            self.editor.hide_all()
             game.set_sequence(IntroSequence())
             self.queue_draw()
 
@@ -1628,7 +1567,7 @@ class BounceActivity(activity.Activity):
             game.set_level(game.curlevel)
             self.pause_game(True)
 
-            self.editor.show()
+            self.editor.show_all()
             game.set_sequence(EditSequence())
             self.queue_draw()
 

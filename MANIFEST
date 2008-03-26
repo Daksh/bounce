@@ -2,7 +2,6 @@ bounce.py
 setup.py
 pongc.py
 _pongc.so
-alsaaudio.so
 MANIFEST
 NEWS
 activity/bounce.svg
@@ -12,3 +11,10 @@ sound/player1paddle.wav
 sound/player2paddle.wav
 sound/score.wav
 sound/wall.wav
+src/build.sh
+src/gtk_types.h
+src/pongc.cpp
+src/pongc.h
+src/pongc.i
+src/pongc_wrap.cxx
+src/setup.py
