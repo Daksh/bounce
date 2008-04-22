@@ -251,8 +251,8 @@ class Ball:
                         if ( next_ball_pos.y - paddle1.pos.y < -15 ):
                             first_collision_vel.y -= 2*256
                     # Likewise if paddle is moving backwards, cushion it.
-                    if ( paddle1.delta.z < 0 ):
-                        first_collision_vel.z -= 2*256
+                    #if ( paddle1.delta.z < 0 ):
+                    #    first_collision_vel.z -= 2*256
                     
                     first_collision_type = 3
             # Computer paddle.
@@ -1299,10 +1299,8 @@ class BounceActivity(activity.Activity):
 
         # Show everything except the panels.
         self.set_canvas(self.drawarea)
-        self.show_all()
-        self.editor.hide_all()
-        self.scorepanel.hide_all()
-
+        self.show_interface()
+        
         # Get the mainloop ready to run (this should come last).
         gobject.timeout_add(50, self.mainloop)
 
@@ -1334,10 +1332,10 @@ class BounceActivity(activity.Activity):
         self.pausebtn.set_tooltip(_("Pause Game"))
         self.pausebtn.connect('clicked', self.on_game_pause)
 
-        self.showscoresbtn = toggletoolbutton.ToggleToolButton('zoom-in')
+        self.showscoresbtn = toggletoolbutton.ToggleToolButton('Show-history')
         self.showscoresbtn.set_tooltip(_("Show History"))
         self.showscoresbtn.connect('clicked', self.on_game_showscores)
-        self.clearscoresbtn = toolbutton.ToolButton('list-remove')
+        self.clearscoresbtn = toolbutton.ToolButton('Reset-history')
         self.clearscoresbtn.set_tooltip(_("Reset History"))
         self.clearscoresbtn.connect('clicked', self.on_game_clearscores)
 
@@ -1416,9 +1414,22 @@ class BounceActivity(activity.Activity):
         align.add(self.scorepanel)
         self.vbox.pack_start(align, True, True)
 
+    def show_interface (self):
+        self.show_all()
+
+        if self.showscoresbtn.get_active():
+            self.scorepanel.show_all()
+        else:
+            self.scorepanel.hide_all()
+
+        if self.mode == BounceActivity.MODE_EDIT:
+            self.editor.show_all()
+        else:
+            self.editor.hide_all()
+        
     #-----------------------------------------------------------------------------------------------------------------
     # Game toolbar
-    
+
     def on_game_pause (self, button):
         self.pause_game(not self.paused)
 
@@ -1661,13 +1672,13 @@ class BounceActivity(activity.Activity):
             # Restore activity state.
             game.set_level(storage.get('curlevel', 0))
             self.set_mode(storage.get('mode', BounceActivity.MODE_GAME))
-            #game.showscoresbtn.set_active(storage.get('history_visible', False))
+            self.showscoresbtn.set_active(storage.get('history_visible', False))
 
             # Always start resumed games paused, with the scores up.
             self.pause_game(True)
             # (not working at the moment, the window comes up but the button stays inactive)
-            #if self.mode == BounceActivity.MODE_GAME:
-            #    game.showscoresbtn.set_active(True)
+            if self.mode == BounceActivity.MODE_GAME:
+                self.showscoresbtn.set_active(True)
 
     def write_file(self, file_path):
         # Save document.

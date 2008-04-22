@@ -2,10 +2,11 @@ bounce.py
 setup.py
 pongc.py
 _pongc.so
-MANIFEST
 NEWS
 activity/bounce.svg
 activity/activity.info
+icons/Show-history.svg
+icons/Reset-history.svg
 sound/intro.wav
 sound/player1paddle.wav
 sound/player2paddle.wav
