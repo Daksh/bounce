@@ -1,3 +1,7 @@
+Bounce-6
+- don't busy wait! (dlo trac #8289)
+- minor packaging updates
+
 Bounce-5
 - New toolbar icons from Loser.
 
