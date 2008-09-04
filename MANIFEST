@@ -3,6 +3,7 @@ setup.py
 pongc.py
 _pongc.so
 NEWS
+TODO
 activity/bounce.svg
 activity/activity.info
 icons/Show-history.svg
@@ -17,5 +18,4 @@ src/gtk_types.h
 src/pongc.cpp
 src/pongc.h
 src/pongc.i
-src/pongc_wrap.cxx
 src/setup.py

@@ -2,7 +2,7 @@
 name = Bounce 
 activity_version = 5
 host_version = 1
-service_name = bounce
+bundle_id = bounce
 icon = bounce
 exec = sugar-activity bounce.BounceActivity
 
