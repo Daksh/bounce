@@ -1287,7 +1287,7 @@ class BounceActivity(activity.Activity):
         # Initialize the FPS counter & limiter.
         self.lastclock = time.time()
         game.fps = 0.0
-        self.limitfps = 30.0 # 30fps is what the XO can currently handle.
+        self.limitfps = 20.0 # 20fps is what the XO can currently handle.
 
         # Get current player info for the scores table.
         self.pservice = presenceservice.get_instance()
@@ -1632,12 +1632,10 @@ class BounceActivity(activity.Activity):
         game.sequence.update()
         self.drawarea.queue_draw()
 
-        # Limit framerate.
+        # Compute framerate.
         diff = float(time.time() - self.lastclock)
         if diff > 0:
             game.fps = 1.0 / diff
-        while time.time() - self.lastclock < 1.0/self.limitfps:
-            pass
         self.lastclock = time.time()
 
         return True
@@ -1645,7 +1643,9 @@ class BounceActivity(activity.Activity):
     def mainloop (self):
         """Runs the game loop.  Note that this doesn't actually return until the activity ends."""
         self.running = True
+        clock = pygame.time.Clock()
         while self.running:
+            clock.tick(self.limitfps)
             self.tick()
             while gtk.events_pending():
                 gtk.main_iteration(False)
