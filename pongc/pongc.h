@@ -20,8 +20,8 @@
 
 #include <python2.5/Python.h>
 
-// todo- Include the real GTK headers when installed.
-#include "gtk_types.h"
+#include <gdk/gdkimage.h>
+#include <gst/gstbuffer.h>
 
 // 2D primitives
 void clear_image(GdkImage* img);

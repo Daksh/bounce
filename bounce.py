@@ -14,7 +14,7 @@ default_stage_descs = [
 
 import logging, os, time, math, threading, random, json, time
 
-from pongc import *
+from pongc.pongc import *
 
 # Import GTK.
 import gobject, pygtk, gtk, pango, cairo

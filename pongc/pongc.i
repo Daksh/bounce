@@ -18,6 +18,7 @@
 %module pongc 
 
 %{
+#include <pygobject.h>
 #include "pongc.h"
 %}
 

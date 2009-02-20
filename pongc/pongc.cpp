@@ -17,27 +17,63 @@
 */
 #include "pongc.h"
 
-void clear_image(GdkImage* img)
+typedef guint16 depth16_t;
+typedef guint32 depth24_t;
+
+template <typename pixel_t> inline
+void _clear_image(GdkImage* img)
 {
-	unsigned short* pixels = (unsigned short*)img->mem;
-	int pitch = img->bpl/sizeof(unsigned short);
+	pixel_t* pixels = (pixel_t*)img->mem;
+	int pitch = img->bpl/sizeof(pixel_t);
 	for (int y = 0; y < img->height; y++)
 		memset(pixels + pitch*y, 0, img->bpl);
 }
 
-void draw_point_2x(GdkImage* img, int x, int y, uint16_t c)
+void clear_image(GdkImage* img)
+{
+    if (img->depth == 16)
+        _clear_image<depth16_t>(img);
+    else
+        _clear_image<depth24_t>(img);
+}
+
+inline
+void to_pixel(depth16_t *pixel, uint16_t c)
+{
+	*pixel = c | c<<6 | c<<11;
+}
+
+inline
+void to_pixel(depth24_t *pixel, uint16_t c)
+{
+	*pixel = c | c<<8 | c<<16;
+}
+
+template <typename pixel_t> inline
+void _draw_point_2x(GdkImage* img, int x, int y, uint16_t c)
 {
 	if (x < 0 || y < 0 || x >= img->width/2-1 || y >= img->height/2-1)
 		return;
 	c >>= 3;
-	unsigned short* pixels = (unsigned short*)img->mem;
-	int pitch = img->bpl/sizeof(unsigned short);
+	pixel_t* pixels = (pixel_t*)img->mem;
+	int pitch = img->bpl/sizeof(pixel_t);
 	int ofs = pitch*y*2+x*2;
-	uint16_t pix = c | c<<6 | c<<11;
+
+	uint16_t pix;
+    to_pixel(&pix, c);
+
 	pixels[ofs] = pix;
 	pixels[ofs+1] = pix;
 	pixels[ofs+pitch] = pix;
 	pixels[ofs+pitch+1] = pix;
+}
+
+void draw_point_2x(GdkImage* img, int x, int y, uint16_t c)
+{
+    if (img->depth == 16)
+        _draw_point_2x<depth16_t>(img, x, y, c);
+    else
+        _draw_point_2x<depth24_t>(img, x, y, c);
 }
 
 void draw_line_2x(GdkImage* img, int x0, int y0, int x1, int y1, int color)
