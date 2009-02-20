@@ -40,13 +40,14 @@ void clear_image(GdkImage* img)
 inline
 void to_pixel(depth16_t *pixel, uint16_t c)
 {
-	*pixel = c | c<<6 | c<<11;
+	*pixel = (c>>3) | (c>>2)<<5 | (c>>3)<<11;
 }
 
 inline
 void to_pixel(depth24_t *pixel, uint16_t c)
 {
-	*pixel = c | c<<8 | c<<16;
+    depth24_t p = 0xff & c;
+	*pixel = p | p<<8 | p<<16;
 }
 
 template <typename pixel_t> inline
@@ -54,12 +55,12 @@ void _draw_point_2x(GdkImage* img, int x, int y, uint16_t c)
 {
 	if (x < 0 || y < 0 || x >= img->width/2-1 || y >= img->height/2-1)
 		return;
-	c >>= 3;
+
 	pixel_t* pixels = (pixel_t*)img->mem;
 	int pitch = img->bpl/sizeof(pixel_t);
 	int ofs = pitch*y*2+x*2;
 
-	uint16_t pix;
+	pixel_t pix;
     to_pixel(&pix, c);
 
 	pixels[ofs] = pix;
