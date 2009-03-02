@@ -1,18 +1,23 @@
+# Copyright 2009 by Wade Brainerd.  
+# This file is part of Bounce.
+#
+# Bounce is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# Bounce is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with Bounce.  If not, see <http://www.gnu.org/licenses/>.
 #!/usr/bin/env python
 """Bounce - 3D action game by Wade Brainerd <wadetb@gmail.com>."""
 
-from gettext import gettext as _
-
-# This section can be modified to change the default stages that are built into the activity.
-default_stage_descs = [
-    { 'Name': _('practice'), 'StageDepth': 160, 'StageXGravity': 0,   'StageYGravity': 0,   'BallSize': 1, 'BallSpeed':  2, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, },
-    { 'Name': _('gravity'),  'StageDepth': 160, 'StageXGravity': 0,   'StageYGravity': 0.5, 'BallSize': 1, 'BallSpeed':  2, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 2, 'AIRecenter': 1, },
-    { 'Name': _('wide'),     'StageDepth': 160, 'StageXGravity': 0,   'StageYGravity': 0.5, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 50, 'PaddleHeight': 15, 'AISpeed': 3, 'AIRecenter': 1, },
-    { 'Name': _('deep'),     'StageDepth': 500, 'StageXGravity': 0,   'StageYGravity': 0,   'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25, 'AISpeed': 2.5, 'AIRecenter': 0, },
-    { 'Name': _('rotate'),   'StageDepth': 160, 'StageXGravity': 0.5, 'StageYGravity': 0,   'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 3, 'AIRecenter': 1, },
-]
-
 import logging, os, time, math, threading, random, time
+from gettext import gettext as _
 
 try:
     import json
@@ -43,6 +48,18 @@ log = logging.getLogger('bounce')
 log.setLevel(logging.DEBUG)
 logging.basicConfig()
 gtk.add_log_handlers()
+
+# This section can be modified to change the default stages that are built into the activity.
+DEFAULT_STAGE_DESCS = [
+    { 'Name': _('practice'), 'StageDepth': 160, 'StageXGravity': 0,   'StageYGravity': 0,   'BallSize': 1, 'BallSpeed':  2, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, },
+    { 'Name': _('gravity'),  'StageDepth': 160, 'StageXGravity': 0,   'StageYGravity': 0.5, 'BallSize': 1, 'BallSpeed':  2, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 2, 'AIRecenter': 1, },
+    { 'Name': _('wide'),     'StageDepth': 160, 'StageXGravity': 0,   'StageYGravity': 0.5, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 50, 'PaddleHeight': 15, 'AISpeed': 3, 'AIRecenter': 1, },
+    { 'Name': _('deep'),     'StageDepth': 500, 'StageXGravity': 0,   'StageYGravity': 0,   'BallSize': 1, 'BallSpeed': 10, 'PaddleWidth': 25, 'PaddleHeight': 25, 'AISpeed': 2.5, 'AIRecenter': 0, },
+    { 'Name': _('rotate'),   'StageDepth': 160, 'StageXGravity': 0.5, 'StageYGravity': 0,   'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 3, 'AIRecenter': 1, },
+]
+
+# These are the settings that will be applied when a new stage is created using the editor.
+NEW_STAGE = { 'Name': _('new stage'), 'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, }
 
 def clamp(a, b, c):
     if (a<b): return b
@@ -902,7 +919,7 @@ class Game:
         self.mousedown = 0
 
         # Default stages.
-        self.stage_descs = default_stage_descs
+        self.stage_descs = DEFAULT_STAGE_DESCS 
 
         # Scores.
         self.scores = []
@@ -1124,6 +1141,10 @@ class EditorPanel(gtk.EventBox):
         desc['PaddleHeight'] = self.paddlesize_y_adjust.get_value()
         desc['AISpeed'] = self.aispeed_adjust.get_value()
 
+    def update_step_btns(self):
+        self.prevbtn.set_sensitive(self.step > 0)
+        self.nextbtn.set_sensitive(self.step < EditorPanel.STEP_MAX-1)
+
     def on_prev (self, btn):
         if self.step > 0:
             self.set_step(self.step-1)
@@ -1137,6 +1158,8 @@ class EditorPanel(gtk.EventBox):
             self.propbox.remove(w)
 
         self.step = step
+
+        self.update_step_btns()
 
         if self.step == EditorPanel.STEP_STAGENAME:
             self.propbox.pack_start(self.stage_label, False, False)
@@ -1476,35 +1499,36 @@ class BounceActivity(activity.Activity):
             game.set_sequence(EditSequence())
             self.queue_draw()
 
+    def edit_stage(self, stage_num):
+        game.set_level(stage_num)
+        self.editor.copy_from_desc(game.stage_descs[stage_num])
+        self.queue_draw()
+        self.prevstagebtn.set_sensitive(stage_num > 0)
+        self.nextstagebtn.set_sensitive(stage_num < len(game.stage_descs)-1)
+        
     def on_edit_prevstage (self, button):
         if game.curlevel > 0:
-            game.set_level(game.curlevel-1)
-            self.editor.copy_from_desc(game.stage_descs[game.curlevel])
-            self.queue_draw()
+            self.edit_stage(game.curlevel-1)
 
     def on_edit_nextstage (self, button):
         if game.curlevel < len(game.stage_descs)-1:
-            game.set_level(game.curlevel+1)
-            self.editor.copy_from_desc(game.stage_descs[game.curlevel])
-            self.queue_draw()
+            self.edit_stage(game.curlevel+1)
 
     def on_edit_addstage (self, button):
-        desc = { 'Name': _('new stage'), 'StageDepth': 160, 'StageXGravity': 0, 'StageYGravity': 0, 'BallSize': 1, 'BallSpeed':  3, 'PaddleWidth': 20, 'PaddleHeight': 20, 'AISpeed': 1, 'AIRecenter': 1, }
-        game.stage_descs.append(desc)
+        game.stage_descs.append(NEW_STAGE.copy())
 
-        game.set_level(len(game.stage_descs)-1)
-        self.editor.copy_from_desc(game.stage_descs[game.curlevel])
-        self.queue_draw()
+        self.edit_stage(len(game.stage_descs)-1)
 
     def on_edit_deletestage (self, button):
         if len(game.stage_descs) <= 1:
             return
+
         del game.stage_descs[game.curlevel]
+
         if game.curlevel > len(game.stage_descs)-1:
-            game.curlevel = len(game.stage_descs)-1
-        game.set_level(game.curlevel)
-        self.editor.copy_from_desc(game.stage_descs[game.curlevel])
-        self.queue_draw()
+            self.edit_stage(len(game.stage_descs)-1)
+        else:
+            self.edit_stage(game.curlevel)
 
     #-----------------------------------------------------------------------------------------------------------------
     # DrawArea event handlers - Drawing, resizing, etc.
@@ -1579,9 +1603,8 @@ class BounceActivity(activity.Activity):
             self.tbox.add_toolbar(_("Edit"), self.editbox)
             self.editbox.show_all()
             self.tbox.set_current_toolbar(1)
-            self.editor.copy_from_desc(game.stage_descs[game.curlevel])
 
-            game.set_level(game.curlevel)
+            self.edit_stage(game.curlevel)
             self.pause_game(True)
 
             self.editor.show_all()
