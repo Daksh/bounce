@@ -1,3 +1,7 @@
+7
+
+Disable next and previous arrows in stage editor when at the end of the list (#205)
+
 Bounce-6
 - don't busy wait! (dlo trac #8289)
 - minor packaging updates
