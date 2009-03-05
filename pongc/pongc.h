@@ -18,7 +18,7 @@
 #ifndef _PONGC_H_
 #define _PONGC_H_
 
-#include <python2.5/Python.h>
+#include <Python.h>
 
 #include <gdk/gdkimage.h>
 #include <gst/gstbuffer.h>
