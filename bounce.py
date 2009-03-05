@@ -12,7 +12,13 @@ default_stage_descs = [
     { 'Name': _('rotate'),   'StageDepth': 160, 'StageXGravity': 0.5, 'StageYGravity': 0,   'BallSize': 1, 'BallSpeed':  5, 'PaddleWidth': 25, 'PaddleHeight': 20, 'AISpeed': 3, 'AIRecenter': 1, },
 ]
 
-import logging, os, time, math, threading, random, json, time
+import logging, os, time, math, threading, random, time
+
+try:
+    import json
+    json.dumps
+except (ImportError, AttributeError):
+    import simplejson as json
 
 from pongc.pongc import *
 
@@ -1663,7 +1669,7 @@ class BounceActivity(activity.Activity):
             finally:
                 fd.close()
 
-            storage = json.read(data)
+            storage = json.loads(data)
 
             # Restore stages.
             game.stage_descs = storage['Stages']
@@ -1698,7 +1704,7 @@ class BounceActivity(activity.Activity):
 
         fd = open(file_path, 'w')
         try:
-            fd.write(json.write(storage))
+            fd.write(json.dumps(storage))
         finally:
             fd.close()
 
