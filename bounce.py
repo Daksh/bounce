@@ -25,7 +25,7 @@ try:
 except (ImportError, AttributeError):
     import simplejson as json
 
-from pongc.pongc import *
+from pongc import *
 
 # Import GTK.
 import gobject, pygtk, gtk, pango, cairo

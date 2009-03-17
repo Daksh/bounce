@@ -15,7 +15,7 @@
     You should have received a copy of the GNU General Public License
     along with 3D Pong.  If not, see <http://www.gnu.org/licenses/>.
 */
-%module pongc 
+%module pongclib
 
 %{
 #include <pygobject.h>

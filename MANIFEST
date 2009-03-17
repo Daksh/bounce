@@ -4,13 +4,9 @@ NEWS
 Makefile
 setup.py
 INSTALL
-pongc/pongc.o
+pongc/pongclib.i
 pongc/__init__.py
-pongc/pongc_wrap.o
-pongc/_pongc.so
-pongc/pongc.i
 pongc/Makefile
-pongc/pongc.py
 pongc/pongc.h
 pongc/pongc.cpp
 icons/Reset-history.svg
